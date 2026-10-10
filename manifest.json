@@ -1,0 +1,50 @@
+{
+  "name": "GOD AI Neural Interface",
+  "short_name": "GOD AI",
+  "description": "A futuristic, multimodal AI interface featuring Live Audio and deep Gemini integration.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "categories": ["utilities", "productivity", "lifestyle"],
+  "icons": [
+    {
+      "src": "https://img.freepik.com/free-photo/humanoid-robot-face-with-cyborg-concept_23-2150840249.jpg",
+      "sizes": "192x192",
+      "type": "image/jpeg",
+      "purpose": "any"
+    },
+    {
+      "src": "https://img.freepik.com/free-photo/humanoid-robot-face-with-cyborg-concept_23-2150840249.jpg",
+      "sizes": "192x192",
+      "type": "image/jpeg",
+      "purpose": "maskable"
+    },
+    {
+      "src": "https://img.freepik.com/free-photo/humanoid-robot-face-with-cyborg-concept_23-2150840249.jpg",
+      "sizes": "512x512",
+      "type": "image/jpeg",
+      "purpose": "any"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Start Neural Link",
+      "short_name": "Live Mode",
+      "description": "Open GOD in Live Vocal Interface mode",
+      "url": "/?mode=live",
+      "icons": [{ "src": "https://img.freepik.com/free-photo/humanoid-robot-face-with-cyborg-concept_23-2150840249.jpg", "sizes": "192x192" }]
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "https://img.freepik.com/free-photo/humanoid-robot-face-with-cyborg-concept_23-2150840249.jpg",
+      "sizes": "1080x1920",
+      "type": "image/jpeg",
+      "form_factor": "narrow",
+      "label": "Neural Interface Initialized"
+    }
+  ]
+}
