@@ -1,6 +1,6 @@
 {
   "name": "GOD",
-  "description": "A futuristic, multimodal AI interface featuring Live Audio, Thinking Mode, and deep integration with Gemini models.",
+  "description": "A futuristic, multimodal AI interface featuring Search Grounding, Live Audio, Thinking Mode, and deep integration with Gemini models.",
   "requestFramePermissions": [
     "camera",
     "microphone"

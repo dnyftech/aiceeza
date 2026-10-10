@@ -1,11 +1,11 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Mic, Image as ImageIcon, BrainCircuit, ArrowUp, X, Sparkles, Radio } from 'lucide-react';
+import { Mic, Image as ImageIcon, BrainCircuit, ArrowUp, X, Sparkles, Radio, Globe } from 'lucide-react';
 import { ModelMode } from '../types';
 import { triggerHaptic } from '../utils/haptics';
 
 interface InputBarProps {
-  onSendMessage: (text: string, options: { mode: ModelMode; image?: File }) => void;
+  onSendMessage: (text: string, options: { mode: ModelMode; image?: File; enableSearchGrounding?: boolean }) => void;
   onLiveToggle: () => void;
   onOpenCeezaVoiceInput?: () => void;
   isLive: boolean;
@@ -14,6 +14,8 @@ interface InputBarProps {
   onSelectChip?: (text: string) => void;
   currentMode?: ModelMode;
   onToggleMode?: () => void;
+  isSearchGrounding?: boolean;
+  onToggleSearchGrounding?: () => void;
 }
 
 export const InputBar: React.FC<InputBarProps> = ({ 
@@ -25,7 +27,9 @@ export const InputBar: React.FC<InputBarProps> = ({
   followUpChips = [], 
   onSelectChip,
   currentMode = ModelMode.Pro,
-  onToggleMode
+  onToggleMode,
+  isSearchGrounding = true,
+  onToggleSearchGrounding
 }) => {
   const [text, setText] = useState('');
   const [isThinking, setIsThinking] = useState(currentMode === ModelMode.Thinking);
@@ -52,8 +56,9 @@ export const InputBar: React.FC<InputBarProps> = ({
 
     triggerHaptic(20);
     onSendMessage(text.trim(), { 
-      mode: isThinking ? ModelMode.Thinking : ModelMode.Pro,
-      image: attachedImage || undefined
+      mode: isThinking ? ModelMode.Thinking : currentMode,
+      image: attachedImage || undefined,
+      enableSearchGrounding: isSearchGrounding
     });
 
     setText('');
@@ -201,7 +206,25 @@ export const InputBar: React.FC<InputBarProps> = ({
               <span className="hidden sm:inline">Thinking</span>
             </button>
 
-            {/* Ceeza Mic DSP */}
+            {/* Search Grounding Toggle */}
+            <button 
+              type="button"
+              onClick={() => {
+                triggerHaptic(15);
+                if (onToggleSearchGrounding) onToggleSearchGrounding();
+              }}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-mono transition-all cursor-pointer border ${
+                isSearchGrounding 
+                  ? 'bg-[#0284c7]/20 text-[#38bdf8] border-[#38bdf8]/50 font-bold' 
+                  : 'text-slate-400 border-transparent hover:bg-white/5 hover:text-slate-200'
+              }`}
+              title={isSearchGrounding ? "Search Grounding: Active (Google Search Live Web Intel)" : "Search Grounding: Disabled"}
+            >
+              <Globe size={14} className={isSearchGrounding ? 'text-[#38bdf8]' : ''} />
+              <span className="hidden sm:inline">Search</span>
+            </button>
+
+            {/* Record Voice Button */}
             {onOpenCeezaVoiceInput && (
               <button 
                 type="button"
@@ -210,10 +233,10 @@ export const InputBar: React.FC<InputBarProps> = ({
                   onOpenCeezaVoiceInput();
                 }}
                 className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-mono text-[#FAAD3F] hover:bg-[#FAAD3F]/10 border border-[#FAAD3F]/20 hover:border-[#FAAD3F]/40 transition-all cursor-pointer"
-                title="Ceeza Voice Input DSP"
+                title="Record Voice (Ceeza DSP)"
               >
                 <Mic size={14} />
-                <span className="hidden sm:inline font-bold">Ceeza Mic</span>
+                <span className="hidden sm:inline font-bold">Record Voice</span>
               </button>
             )}
           </div>

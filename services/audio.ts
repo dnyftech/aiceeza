@@ -36,10 +36,20 @@ export async function decodeAudioData(
   sampleRate: number = 24000,
   numChannels: number = 1
 ): Promise<AudioBuffer> {
-  // Use byteOffset and byteLength to handle cases where 'data' is a view on a larger buffer
-  const dataInt16 = new Int16Array(data.buffer, data.byteOffset, data.byteLength / 2);
-  const frameCount = dataInt16.length / numChannels;
-  const buffer = ctx.createBuffer(numChannels, frameCount, sampleRate);
+  // Check if data is a standard RIFF/WAV audio container (ASCII 'RIFF' header)
+  if (data.length > 44 && data[0] === 0x52 && data[1] === 0x49 && data[2] === 0x46 && data[3] === 0x46) {
+    try {
+      const arrayBufferCopy = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
+      return await ctx.decodeAudioData(arrayBufferCopy);
+    } catch (e) {
+      console.warn("Native WAV decode fallback to PCM decoder:", e);
+    }
+  }
+
+  // Raw 16-bit PCM decoding (e.g. from Gemini Live session)
+  const dataInt16 = new Int16Array(data.buffer, data.byteOffset, Math.floor(data.byteLength / 2));
+  const frameCount = Math.floor(dataInt16.length / numChannels);
+  const buffer = ctx.createBuffer(numChannels, Math.max(1, frameCount), sampleRate);
 
   for (let channel = 0; channel < numChannels; channel++) {
     const channelData = buffer.getChannelData(channel);

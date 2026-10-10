@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Mic, MicOff, Volume2, VolumeX, PhoneOff, MessageSquare, Sparkles, ChevronDown, Check, Radio, Activity, Eye, EyeOff } from 'lucide-react';
 import Orb, { IndicatingOrb } from './Orb';
 import { AudioVisualizer } from './AudioVisualizer';
+import { D3FrequencyVisualizer } from './D3FrequencyVisualizer';
 import { OrbTheme, VoicePersonalityId } from '../types';
 import { AVAILABLE_VOICES, VOICE_PERSONALITIES } from '../services/geminiService';
 import { triggerHaptic } from '../utils/haptics';
@@ -212,9 +213,9 @@ export const LiveVoiceSession: React.FC<LiveVoiceSessionProps> = ({
             />
           </div>
 
-          {/* Real-time Frequency Spectrum Audio Visualizer */}
-          <div className="w-full max-w-sm mt-4">
-            <AudioVisualizer 
+          {/* Real-time Frequency Spectrum D3 Audio Visualizer */}
+          <div className="w-full max-w-md mt-4">
+            <D3FrequencyVisualizer 
               analyser={analyserNode} 
               isActive={!isMuted} 
               isBotSpeaking={isBotSpeaking} 

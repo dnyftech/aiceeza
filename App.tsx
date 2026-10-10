@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Settings, Zap, RotateCcw, Moon, Sun, Play, X, Download, CheckCircle2, ArrowDown, Trash2, Mic, Cpu, Terminal, ShieldCheck, Activity, Layers, Radio, Sparkles, Volume2, VolumeX, Palette, Sliders, ArrowLeftRight, Check, BrainCircuit } from 'lucide-react';
+import { Settings, Zap, RotateCcw, Moon, Sun, Play, X, Download, CheckCircle2, ArrowDown, Trash2, Mic, Cpu, Terminal, ShieldCheck, Activity, Layers, Radio, Sparkles, Volume2, VolumeX, Palette, Sliders, ArrowLeftRight, Check, BrainCircuit, Bookmark } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import InputBar from './components/InputBar';
 import ChatMessage from './components/ChatMessage';
@@ -11,15 +11,24 @@ import { OfflineToast } from './components/OfflineToast';
 import { WakeWordListener } from './components/WakeWordListener';
 import { ChatPlaceholder } from './components/ChatPlaceholder';
 import { LiveVoiceSession } from './components/LiveVoiceSession';
-import { Message, Sender, ModelMode, VoicePersonalityId, OrbTheme, UserProfile, AssistantTask } from './types';
-import { sendMessageToGemini, generateSpeech, connectLiveSession, transcribeAudio, VOICE_PERSONALITIES, AVAILABLE_VOICES } from './services/geminiService';
+import { NeuralProcessingIndicator } from './components/NeuralProcessingIndicator';
+import { SavedResponsesModal } from './components/SavedResponsesModal';
+import { ArtifactsWorkbench } from './components/ArtifactsWorkbench';
+import { WorkspaceManagerModal } from './components/WorkspaceManagerModal';
+import { EnginesDashboardModal } from './components/EnginesDashboardModal';
+import { DeviceAPIInspectorModal } from './components/DeviceAPIInspectorModal';
+import { CommandPaletteModal } from './components/CommandPaletteModal';
+import { Message, Sender, ModelMode, VoicePersonalityId, OrbTheme, UserProfile, AssistantTask, Artifact, Workspace, EngineConfig, EngineTelemetry } from './types';
+import { sendMessageToGemini, generateSpeech, connectLiveSession, transcribeAudio, VOICE_PERSONALITIES, AVAILABLE_VOICES, formatTextForExpressiveSpeech } from './services/geminiService';
 import { decodeAudioData } from './services/audio';
 import { triggerHaptic } from './utils/haptics';
 import { CeezaVoiceInputModal } from './components/CeezaVoiceInputModal';
 import { UserAccountModal } from './components/UserAccountModal';
 import { AndroidAssistantModal } from './components/AndroidAssistantModal';
 import { detectAndExecuteAndroidIntent, DEFAULT_TASKS } from './utils/androidIntents';
-import { Smartphone, User } from 'lucide-react';
+import { DEFAULT_ARTIFACTS, DEFAULT_WORKSPACES, extractArtifactFromText } from './utils/artifactsExtractor';
+import { useDeviceCapabilities } from './utils/deviceDetector';
+import { Smartphone, Tablet, Monitor, User, Search, FolderKanban } from 'lucide-react';
 
 const DEFAULT_USERS: UserProfile[] = [
   {
@@ -155,7 +164,7 @@ const App: React.FC = () => {
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isOnline, setIsOnline] = useState<boolean>(navigator.onLine);
   const [isStandalone, setIsStandalone] = useState<boolean>(false);
-  const [isWakeWordEnabled, setIsWakeWordEnabled] = useState<boolean>(true);
+  const [isWakeWordEnabled, setIsWakeWordEnabled] = useState<boolean>(false);
   
   // User Accounts State
   const [users, setUsers] = useState<UserProfile[]>(() => {
@@ -185,10 +194,122 @@ const App: React.FC = () => {
     }
   });
 
+  // Cross-Device Capabilities
+  const deviceCapabilities = useDeviceCapabilities();
+
+  // Artifacts State
+  const [artifacts, setArtifacts] = useState<Artifact[]>(() => {
+    try {
+      const saved = localStorage.getItem('god_ai_artifacts');
+      return saved ? JSON.parse(saved) : DEFAULT_ARTIFACTS;
+    } catch {
+      return DEFAULT_ARTIFACTS;
+    }
+  });
+  const [activeArtifactId, setActiveArtifactId] = useState<string | null>(() => {
+    return DEFAULT_ARTIFACTS[0]?.id || null;
+  });
+  const [showArtifactsModal, setShowArtifactsModal] = useState(false);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('god_ai_artifacts', JSON.stringify(artifacts));
+    } catch (e) {
+      console.error('Failed to save artifacts:', e);
+    }
+  }, [artifacts]);
+
+  // Workspaces State
+  const [workspaces, setWorkspaces] = useState<Workspace[]>(() => {
+    try {
+      const saved = localStorage.getItem('god_ai_workspaces');
+      return saved ? JSON.parse(saved) : DEFAULT_WORKSPACES;
+    } catch {
+      return DEFAULT_WORKSPACES;
+    }
+  });
+  const [activeWorkspaceId, setActiveWorkspaceId] = useState<string>(() => {
+    return localStorage.getItem('god_ai_active_workspace_id') || 'ws-default';
+  });
+  const [showWorkspaceModal, setShowWorkspaceModal] = useState(false);
+
+  const activeWorkspace = useMemo(() => {
+    return workspaces.find(w => w.id === activeWorkspaceId) || workspaces[0] || DEFAULT_WORKSPACES[0];
+  }, [workspaces, activeWorkspaceId]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('god_ai_workspaces', JSON.stringify(workspaces));
+    } catch (e) {
+      console.error('Failed to save workspaces:', e);
+    }
+  }, [workspaces]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('god_ai_active_workspace_id', activeWorkspaceId);
+    } catch (e) {
+      console.error('Failed to save active workspace id:', e);
+    }
+  }, [activeWorkspaceId]);
+
+  // Internal Engine & Parameter Tuning State
+  const [engineConfig, setEngineConfig] = useState<EngineConfig>(() => {
+    try {
+      const saved = localStorage.getItem('god_ai_engine_config');
+      return saved ? JSON.parse(saved) : {
+        temperature: 0.7,
+        thinkingBudget: 16384,
+        topP: 0.95,
+        searchGrounding: true,
+        audioSampleRate: 24000,
+        echoCancelation: true,
+        hardwareAcceleration: true,
+      };
+    } catch {
+      return {
+        temperature: 0.7,
+        thinkingBudget: 16384,
+        topP: 0.95,
+        searchGrounding: true,
+        audioSampleRate: 24000,
+        echoCancelation: true,
+        hardwareAcceleration: true,
+      };
+    }
+  });
+  const [showEnginesModal, setShowEnginesModal] = useState(false);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('god_ai_engine_config', JSON.stringify(engineConfig));
+    } catch (e) {
+      console.error('Failed to save engine config:', e);
+    }
+  }, [engineConfig]);
+
+  // Telemetry Metrics
+  const [engineTelemetry, setEngineTelemetry] = useState<EngineTelemetry>({
+    totalTokens: 142850,
+    totalRequests: 24,
+    avgLatencyMs: 165,
+    lastLatencyMs: 142,
+    cacheHitCount: 42,
+    liveConnectionsCount: 1,
+  });
+
+  // Device Inspector & Command Palette Modals
+  const [showDeviceInspector, setShowDeviceInspector] = useState(false);
+  const [showCommandPalette, setShowCommandPalette] = useState(false);
+
   // Modal Visibility Controls
   const [showUserModal, setShowUserModal] = useState(false);
   const [showAndroidModal, setShowAndroidModal] = useState(false);
   const [showCeezaVoiceModal, setShowCeezaVoiceModal] = useState(false);
+  const [showSavedModal, setShowSavedModal] = useState(false);
+
+  const savedMessages = useMemo(() => messages.filter((m) => m.isSaved), [messages]);
+  const savedCount = savedMessages.length;
 
   useEffect(() => {
     try {
@@ -265,6 +386,161 @@ const App: React.FC = () => {
     setAssistantTasks((prev) => prev.filter((t) => t.id !== taskId));
   };
 
+  // Global Keyboard Shortcuts (Cmd+K, Alt+A, Alt+W, Alt+E, Alt+D)
+  useEffect(() => {
+    const handleGlobalShortcuts = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setShowCommandPalette((prev) => !prev);
+      } else if (e.altKey && e.key.toLowerCase() === 'a') {
+        e.preventDefault();
+        setShowArtifactsModal((prev) => !prev);
+      } else if (e.altKey && e.key.toLowerCase() === 'w') {
+        e.preventDefault();
+        setShowWorkspaceModal((prev) => !prev);
+      } else if (e.altKey && e.key.toLowerCase() === 'e') {
+        e.preventDefault();
+        setShowEnginesModal((prev) => !prev);
+      } else if (e.altKey && e.key.toLowerCase() === 'd') {
+        e.preventDefault();
+        setShowDeviceInspector((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleGlobalShortcuts);
+    return () => window.removeEventListener('keydown', handleGlobalShortcuts);
+  }, []);
+
+  // Artifact Actions
+  const handleOpenInArtifacts = (text: string) => {
+    triggerHaptic(20);
+    const extracted = extractArtifactFromText(text);
+    if (extracted) {
+      const newArt: Artifact = {
+        id: `art-${Date.now()}`,
+        title: extracted.title,
+        type: extracted.language === 'svg' ? 'svg' : extracted.language === 'markdown' ? 'markdown' : 'code',
+        language: extracted.language,
+        content: extracted.content,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        workspaceId: activeWorkspaceId,
+        version: 1,
+        tags: ['Extracted', extracted.language.toUpperCase()]
+      };
+      setArtifacts((prev) => [newArt, ...prev]);
+      setActiveArtifactId(newArt.id);
+    }
+    setShowArtifactsModal(true);
+  };
+
+  const handleSaveArtifact = (artifact: Artifact) => {
+    setArtifacts((prev) => prev.map((a) => (a.id === artifact.id ? artifact : a)));
+  };
+
+  const handleDeleteArtifact = (id: string) => {
+    setArtifacts((prev) => prev.filter((a) => a.id !== id));
+    if (activeArtifactId === id) {
+      setActiveArtifactId(artifacts.find((a) => a.id !== id)?.id || null);
+    }
+  };
+
+  const handleCreateArtifact = (artifactData: Omit<Artifact, 'id' | 'createdAt' | 'updatedAt' | 'version'>) => {
+    const newArt: Artifact = {
+      ...artifactData,
+      id: `art-${Date.now()}`,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      version: 1,
+    };
+    setArtifacts((prev) => [newArt, ...prev]);
+    setActiveArtifactId(newArt.id);
+  };
+
+  // Workspace Actions
+  const handleSwitchWorkspace = (id: string) => {
+    setActiveWorkspaceId(id);
+    showGestureToast(`Switched to ${workspaces.find((w) => w.id === id)?.name || 'Workspace'}`, 'thinking');
+  };
+
+  const handleCreateWorkspace = (workspaceData: Omit<Workspace, 'id' | 'createdAt'>) => {
+    const newWs: Workspace = {
+      ...workspaceData,
+      id: `ws-${Date.now()}`,
+      createdAt: new Date().toISOString(),
+    };
+    setWorkspaces((prev) => [...prev, newWs]);
+    setActiveWorkspaceId(newWs.id);
+  };
+
+  const handleDeleteWorkspace = (id: string) => {
+    if (workspaces.length <= 1) return;
+    setWorkspaces((prev) => prev.filter((w) => w.id !== id));
+    if (activeWorkspaceId === id) {
+      setActiveWorkspaceId(workspaces.find((w) => w.id !== id)?.id || workspaces[0].id);
+    }
+  };
+
+  const handleUpdateScratchpad = (workspaceId: string, scratchpad: string) => {
+    setWorkspaces((prev) => prev.map((w) => (w.id === workspaceId ? { ...w, scratchpad } : w)));
+  };
+
+  const handleSynthesizeScratchpadToArtifact = (scratchpad: string) => {
+    const newArt: Artifact = {
+      id: `art-${Date.now()}`,
+      title: `${activeWorkspace.name} Synthesized Spec`,
+      type: 'markdown',
+      language: 'markdown',
+      content: scratchpad,
+      description: `Synthesized from workspace scratchpad notes on ${new Date().toLocaleDateString()}`,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      workspaceId: activeWorkspaceId,
+      version: 1,
+      tags: ['Workspace', 'Notes', 'Synthesized']
+    };
+    setArtifacts((prev) => [newArt, ...prev]);
+    setActiveArtifactId(newArt.id);
+    setShowWorkspaceModal(false);
+    setShowArtifactsModal(true);
+  };
+
+  const handleExportWorkspaces = () => {
+    const bundle = {
+      version: '1.0',
+      exportedAt: new Date().toISOString(),
+      workspaces,
+      artifacts,
+      activeWorkspaceId,
+    };
+    const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `god-ai-workspace-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImportWorkspaces = (jsonStr: string) => {
+    try {
+      const data = JSON.parse(jsonStr);
+      if (data.workspaces && Array.isArray(data.workspaces)) {
+        setWorkspaces(data.workspaces);
+      }
+      if (data.artifacts && Array.isArray(data.artifacts)) {
+        setArtifacts(data.artifacts);
+      }
+      if (data.activeWorkspaceId) {
+        setActiveWorkspaceId(data.activeWorkspaceId);
+      }
+      showGestureToast('Workspace & Artifacts Restored', 'thinking');
+    } catch (e) {
+      console.error('Failed to parse workspace backup', e);
+    }
+  };
+
   const [personalityId, setPersonalityId] = useState<VoicePersonalityId>(() => {
     const saved = localStorage.getItem('god_ai_voice_personality');
     return (saved as VoicePersonalityId) || 'ceeza';
@@ -279,11 +555,33 @@ const App: React.FC = () => {
     return localStorage.getItem('god_ai_custom_voice') || '';
   });
 
+  const [isSearchGrounding, setIsSearchGrounding] = useState<boolean>(() => {
+    const saved = localStorage.getItem('god_ai_search_grounding');
+    return saved !== null ? saved === 'true' : true;
+  });
+
   const [gestureToast, setGestureToast] = useState<{ text: string; type: 'clear' | 'thinking' } | null>(null);
   const [previewVoiceId, setPreviewVoiceId] = useState<string | null>(null);
   const [isPreviewLoading, setIsPreviewLoading] = useState<boolean>(false);
 
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('god_ai_search_grounding', isSearchGrounding.toString());
+    } catch (e) {
+      console.error('Failed to save search grounding state:', e);
+    }
+  }, [isSearchGrounding]);
+
+  const toggleSearchGrounding = () => {
+    triggerHaptic(20);
+    setIsSearchGrounding(prev => {
+      const next = !prev;
+      showGestureToast(next ? "Search Grounding: Active (Web Intel)" : "Search Grounding: Disabled", "thinking");
+      return next;
+    });
+  };
 
   useEffect(() => {
     try {
@@ -376,14 +674,39 @@ const App: React.FC = () => {
           setPreviewVoiceId(null);
         };
         source.start();
+      } else if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        // Fallback to Web Speech API
+        const utterance = new SpeechSynthesisUtterance("Voice preview operational. Trade intelligence system check.");
+        utterance.onend = () => {
+          setIsPreviewLoading(false);
+          setPreviewVoiceId(null);
+        };
+        utterance.onerror = () => {
+          setIsPreviewLoading(false);
+          setPreviewVoiceId(null);
+        };
+        window.speechSynthesis.speak(utterance);
       } else {
         setIsPreviewLoading(false);
         setPreviewVoiceId(null);
       }
     } catch (err) {
-      console.error("Voice preview error:", err);
-      setIsPreviewLoading(false);
-      setPreviewVoiceId(null);
+      console.warn("Voice preview error, attempting browser speech synthesis fallback:", err);
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        const utterance = new SpeechSynthesisUtterance("Voice preview operational.");
+        utterance.onend = () => {
+          setIsPreviewLoading(false);
+          setPreviewVoiceId(null);
+        };
+        utterance.onerror = () => {
+          setIsPreviewLoading(false);
+          setPreviewVoiceId(null);
+        };
+        window.speechSynthesis.speak(utterance);
+      } else {
+        setIsPreviewLoading(false);
+        setPreviewVoiceId(null);
+      }
     }
   };
 
@@ -512,7 +835,7 @@ const App: React.FC = () => {
     }
     
     if (messages.length === 0) {
-      const welcomeSpeech = "System Initialized. Accessing Neural Pathways. I am God AI. The 99% Feature Intelligence. CEEZA is online.";
+      const welcomeSpeech = "System Initialized. [pause] Accessing neural pathways. [confident] I am God AI, the ninety-nine percent feature intelligence core. [pause] CEEZA is online and ready for command.";
       playTTS(welcomeSpeech, false);
     }
   };
@@ -555,7 +878,8 @@ const App: React.FC = () => {
         const response = await sendMessageToGemini({
           message: cleanText,
           mode: mode === ModelMode.Thinking ? ModelMode.Thinking : mode,
-          personalityId
+          personalityId,
+          enableSearchGrounding: isSearchGrounding
         });
         const latency = Math.round(performance.now() - startTime);
         setLastLatencyMs(latency);
@@ -570,7 +894,8 @@ const App: React.FC = () => {
           text: botReply,
           sender: Sender.Bot,
           timestamp: new Date(),
-          isThinking: mode === ModelMode.Thinking
+          isThinking: mode === ModelMode.Thinking,
+          groundingMetadata: response.groundingMetadata
         };
         setMessages(prev => [...prev, botMsg]);
 
@@ -598,7 +923,10 @@ const App: React.FC = () => {
     }
   };
 
-  const handleSendMessage = async (text: string, options: { mode: ModelMode; image?: File }) => {
+  const handleSendMessage = async (
+    text: string, 
+    options: { mode: ModelMode; image?: File; enableSearchGrounding?: boolean }
+  ) => {
     setIsLoading(true);
     incrementUserQueryCount();
     let imageBase64 = undefined;
@@ -633,11 +961,16 @@ const App: React.FC = () => {
     const startTime = performance.now();
 
     try {
+      const enableSearch = options.enableSearchGrounding !== undefined 
+        ? options.enableSearchGrounding 
+        : isSearchGrounding;
+
       const response = await sendMessageToGemini({
         message: text,
         mode: options.mode === ModelMode.Thinking ? ModelMode.Thinking : mode,
         image: imageBase64,
-        personalityId: personalityId
+        personalityId: personalityId,
+        enableSearchGrounding: enableSearch
       });
 
       const latency = Math.round(performance.now() - startTime);
@@ -654,6 +987,7 @@ const App: React.FC = () => {
         sender: Sender.Bot,
         timestamp: new Date(),
         isThinking: options.mode === ModelMode.Thinking,
+        groundingMetadata: response.groundingMetadata
       };
 
       setMessages(prev => [...prev, botMessage]);
@@ -684,10 +1018,104 @@ const App: React.FC = () => {
     }));
   };
 
+  const handleToggleSaveMessage = (id: string) => {
+    setMessages((prev) =>
+      prev.map((m) => {
+        if (m.id === id) {
+          const nextSaved = !m.isSaved;
+          showGestureToast(nextSaved ? "Response Saved to Bookmarks" : "Removed from Bookmarks", "thinking");
+          return {
+            ...m,
+            isSaved: nextSaved,
+            savedAt: nextSaved ? new Date().toISOString() : undefined,
+          };
+        }
+        return m;
+      })
+    );
+  };
+
+  const handleBatchDeleteSaved = (ids: string[]) => {
+    const idSet = new Set(ids);
+    setMessages((prev) =>
+      prev.map((m) => {
+        if (idSet.has(m.id)) {
+          return {
+            ...m,
+            isSaved: false,
+            savedAt: undefined,
+          };
+        }
+        return m;
+      })
+    );
+    showGestureToast(`Removed ${ids.length} responses from bookmarks`, "clear");
+  };
+
+  const handleReactMessage = (id: string, emoji: string) => {
+    setMessages((prev) =>
+      prev.map((m) => {
+        if (m.id === id) {
+          const userReactions = m.userReactions ? [...m.userReactions] : [];
+          const reactions = m.reactions ? { ...m.reactions } : {};
+          const hasReacted = userReactions.includes(emoji);
+
+          if (hasReacted) {
+            // Remove reaction
+            const nextUserReactions = userReactions.filter((e) => e !== emoji);
+            const currentCount = reactions[emoji] || 1;
+            if (currentCount <= 1) {
+              delete reactions[emoji];
+            } else {
+              reactions[emoji] = currentCount - 1;
+            }
+            return {
+              ...m,
+              reactions,
+              userReactions: nextUserReactions,
+            };
+          } else {
+            // Add reaction
+            userReactions.push(emoji);
+            reactions[emoji] = (reactions[emoji] || 0) + 1;
+            
+            // If user reacted with bookmark or star or flag, automatically mark as saved!
+            const shouldSave = emoji === '⭐' || emoji === '🔖' || emoji === '🚩';
+            const isSaved = shouldSave ? true : m.isSaved;
+
+            return {
+              ...m,
+              reactions,
+              userReactions,
+              isSaved,
+              savedAt: shouldSave && !m.savedAt ? new Date().toISOString() : m.savedAt,
+            };
+          }
+        }
+        return m;
+      })
+    );
+  };
+
+  const handleJumpToMessage = (id: string) => {
+    setShowSavedModal(false);
+    setTimeout(() => {
+      const el = document.getElementById(`msg-${id}`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.classList.add('ring-2', 'ring-[#FAAD3F]', 'ring-offset-2', 'ring-offset-black');
+        setTimeout(() => {
+          el.classList.remove('ring-2', 'ring-[#FAAD3F]', 'ring-offset-2', 'ring-offset-black');
+        }, 2200);
+      }
+    }, 150);
+  };
+
   const playTTS = async (text: string, withEcho: boolean = false) => {
     setIsBotSpeaking(true);
-    const audioBufferData = await generateSpeech(text, personalityId, customVoiceName);
-    if (audioBufferData && outputAudioContextRef.current) {
+    try {
+      const audioBufferData = await generateSpeech(text, personalityId, customVoiceName);
+      if (audioBufferData && outputAudioContextRef.current) {
         const ctx = outputAudioContextRef.current;
         if (ctx.state === 'suspended') await ctx.resume();
         
@@ -726,8 +1154,31 @@ const App: React.FC = () => {
         }
         
         source.start();
-    } else {
-      setIsBotSpeaking(false);
+      } else if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        // Fallback to browser Web Speech API with natural conversational cadence
+        const naturalSpoken = formatTextForExpressiveSpeech(text).replace(/\[[^\]]+\]/g, ', ');
+        const utterance = new SpeechSynthesisUtterance(naturalSpoken.slice(0, 450));
+        utterance.rate = 0.98; // Natural conversational tempo
+        utterance.pitch = 1.02; // Warm, dynamic tone
+        utterance.onend = () => setIsBotSpeaking(false);
+        utterance.onerror = () => setIsBotSpeaking(false);
+        window.speechSynthesis.speak(utterance);
+      } else {
+        setIsBotSpeaking(false);
+      }
+    } catch (e) {
+      console.warn("playTTS error, attempting speech synthesis fallback:", e);
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        const naturalSpoken = formatTextForExpressiveSpeech(text).replace(/\[[^\]]+\]/g, ', ');
+        const utterance = new SpeechSynthesisUtterance(naturalSpoken.slice(0, 450));
+        utterance.rate = 0.98;
+        utterance.pitch = 1.02;
+        utterance.onend = () => setIsBotSpeaking(false);
+        utterance.onerror = () => setIsBotSpeaking(false);
+        window.speechSynthesis.speak(utterance);
+      } else {
+        setIsBotSpeaking(false);
+      }
     }
   };
 
@@ -814,19 +1265,91 @@ const App: React.FC = () => {
       />
       
       {/* Header */}
-      <header className="flex items-center justify-between px-4 md:px-6 py-3.5 glass sticky top-0 z-50 rounded-b-[2rem] mx-2 mt-2 border-b border-[#F38020]/20">
-        <div className="flex-1 flex items-center gap-2">
+      <header className="flex items-center justify-between px-3 sm:px-4 md:px-6 py-2.5 sm:py-3 glass sticky top-0 z-50 rounded-b-[2rem] mx-2 mt-2 border-b border-[#F38020]/20 flex-shrink-0">
+        <div className="flex-1 flex items-center gap-1.5 sm:gap-2 overflow-x-auto no-scrollbar py-0.5">
           <motion.button 
             whileHover={{ scale: 1.1 }}
             whileTap={{ scale: 0.9 }}
             onClick={() => setShowSettings(true)}
-            className="p-2 hover:bg-[#182236] rounded-full transition-colors text-slate-400 hover:text-[#FAAD3F]"
+            className="p-1.5 sm:p-2 hover:bg-[#182236] rounded-full transition-colors text-slate-400 hover:text-[#FAAD3F] flex-shrink-0"
             title="System Settings"
           >
-            <Settings size={20} />
+            <Settings size={18} />
           </motion.button>
 
-          {/* Android Assistant Tasks Quick Trigger */}
+          {/* Active Workspace Selector */}
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={() => {
+              triggerHaptic(15);
+              setShowWorkspaceModal(true);
+            }}
+            className="flex items-center gap-1.5 px-2.5 py-1 sm:py-1.5 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-slate-200 text-[10px] font-mono font-bold transition-all flex-shrink-0"
+            title="Intelligent Workspaces (Alt+W)"
+          >
+            <span>{activeWorkspace.icon}</span>
+            <span className="hidden sm:inline truncate max-w-[90px]">{activeWorkspace.name}</span>
+          </motion.button>
+
+          {/* Artifacts Workbench Trigger */}
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={() => {
+              triggerHaptic(15);
+              setShowArtifactsModal(true);
+            }}
+            className="flex items-center gap-1.5 px-2.5 py-1 sm:py-1.5 rounded-full bg-[#FAAD3F]/15 hover:bg-[#FAAD3F]/25 border border-[#FAAD3F]/40 text-[#FAAD3F] text-[10px] font-mono font-bold transition-all flex-shrink-0"
+            title="Artifacts Workbench (Alt+A)"
+          >
+            <Layers size={13} />
+            <span className="hidden sm:inline">Artifacts</span>
+            <span className="w-4 h-4 rounded-full bg-[#FAAD3F] text-black text-[9px] font-bold flex items-center justify-center">
+              {artifacts.length}
+            </span>
+          </motion.button>
+
+          {/* Internal Engines Matrix Trigger */}
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={() => {
+              triggerHaptic(15);
+              setShowEnginesModal(true);
+            }}
+            className="flex items-center gap-1.5 px-2.5 py-1 sm:py-1.5 rounded-full bg-[#a855f7]/15 hover:bg-[#a855f7]/25 border border-[#a855f7]/40 text-[#c084fc] text-[10px] font-mono font-bold transition-all flex-shrink-0"
+            title="Engines Matrix & Telemetry (Alt+E)"
+          >
+            <Cpu size={13} />
+            <span className="hidden md:inline">Engines</span>
+          </motion.button>
+
+          {/* Saved Intelligence / Bookmarks Trigger */}
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={() => {
+              triggerHaptic(15);
+              setShowSavedModal(true);
+            }}
+            className={`flex items-center gap-1.5 px-2.5 py-1 sm:py-1.5 rounded-full border text-[10px] font-mono uppercase tracking-wider font-bold transition-all flex-shrink-0 ${
+              savedCount > 0
+                ? 'bg-[#FAAD3F]/15 hover:bg-[#FAAD3F]/25 border-[#FAAD3F]/40 text-[#FAAD3F]'
+                : 'bg-white/5 hover:bg-white/10 border-white/10 text-slate-400 hover:text-white'
+            }`}
+            title="Saved Responses & Bookmarks"
+          >
+            <Bookmark size={13} className={savedCount > 0 ? 'fill-[#FAAD3F]' : ''} />
+            <span className="hidden lg:inline">Saved</span>
+            {savedCount > 0 && (
+              <span className="w-4 h-4 rounded-full bg-[#FAAD3F] text-black font-mono text-[9px] font-bold flex items-center justify-center">
+                {savedCount}
+              </span>
+            )}
+          </motion.button>
+
+          {/* Android Assistant Tasks Trigger */}
           <motion.button
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
@@ -834,11 +1357,11 @@ const App: React.FC = () => {
               triggerHaptic(15);
               setShowAndroidModal(true);
             }}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#34A853]/15 hover:bg-[#34A853]/25 border border-[#34A853]/40 text-[#34A853] text-[10px] font-mono uppercase tracking-wider font-bold transition-all"
+            className="flex items-center gap-1.5 px-2.5 py-1 sm:py-1.5 rounded-full bg-[#34A853]/15 hover:bg-[#34A853]/25 border border-[#34A853]/40 text-[#34A853] text-[10px] font-mono uppercase tracking-wider font-bold transition-all flex-shrink-0"
             title="Android Assistant Tasks & Intents"
           >
-            <Smartphone size={14} className="text-[#34A853]" />
-            <span className="hidden sm:inline">Tasks</span>
+            <Smartphone size={13} className="text-[#34A853]" />
+            <span className="hidden lg:inline">Tasks</span>
             {assistantTasks.filter(t => !t.completed).length > 0 && (
               <span className="w-4 h-4 rounded-full bg-[#34A853] text-black font-mono text-[9px] font-bold flex items-center justify-center">
                 {assistantTasks.filter(t => !t.completed).length}
@@ -847,38 +1370,71 @@ const App: React.FC = () => {
           </motion.button>
         </div>
 
-        <div className="flex flex-col items-center">
+        {/* Center GOD AI Orb & Brand */}
+        <div className="flex flex-col items-center px-2 flex-shrink-0">
           <div className="flex items-center gap-2">
             <IndicatingOrb 
               status={isLive ? 'live' : isBotSpeaking ? 'speaking' : mode === ModelMode.Thinking ? 'thinking' : 'idle'} 
               size={18} 
               theme={orbTheme}
             />
-            <h1 className="text-lg md:text-xl font-bold tracking-tight font-display italic leading-none text-white flex items-center gap-1.5">
-              GOD AI <span className="text-[10px] md:text-xs not-italic font-mono text-[#FAAD3F] font-bold bg-[#FAAD3F]/10 px-2 py-0.5 rounded-md border border-[#FAAD3F]/30 uppercase">
+            <h1 className="text-base sm:text-lg md:text-xl font-bold tracking-tight font-display italic leading-none text-white flex items-center gap-1.5">
+              GOD AI <span className="text-[10px] md:text-xs not-italic font-mono text-[#FAAD3F] font-bold bg-[#FAAD3F]/10 px-2 py-0.5 rounded-md border border-[#FAAD3F]/30 uppercase hidden sm:inline">
                 {VOICE_PERSONALITIES[personalityId]?.name || 'CEEZA'}
               </span>
             </h1>
           </div>
-          <div className="flex items-center gap-2 mt-1">
-            <p className="text-[9px] uppercase tracking-[0.2em] text-[#FAAD3F] font-semibold font-mono">
+          <div className="flex items-center gap-1.5 mt-0.5">
+            <p className="text-[8px] sm:text-[9px] uppercase tracking-[0.2em] text-[#FAAD3F] font-semibold font-mono hidden sm:block">
               {isLive ? 'Live Vocal Link' : mode === ModelMode.Thinking ? 'Neural Cortex Active' : 'Neural Link Active'}
             </p>
             {lastLatencyMs !== null ? (
-              <span className="flex items-center gap-1 text-[9px] font-mono font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded-full shadow-[0_0_10px_rgba(52,211,153,0.15)]">
-                <Zap size={10} className="text-emerald-400 animate-pulse" />
+              <span className="flex items-center gap-1 text-[8px] sm:text-[9px] font-mono font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-1.5 py-0.2 rounded-full">
+                <Zap size={9} className="text-emerald-400 animate-pulse" />
                 {lastLatencyMs} ms
               </span>
-            ) : (
-              <span className="flex items-center gap-1 text-[9px] font-mono font-bold text-slate-400 bg-slate-800/60 border border-white/10 px-2 py-0.5 rounded-full">
-                <Zap size={10} className="text-slate-400" />
-                Fastest Response
-              </span>
-            )}
+            ) : null}
           </div>
         </div>
 
-        <div className="flex-1 flex items-center justify-end gap-1.5">
+        {/* Right Action Tools: Device API Inspector, Command Palette, User Profile */}
+        <div className="flex-1 flex items-center justify-end gap-1 sm:gap-1.5 flex-shrink-0">
+          {/* Cross-Device API Inspector */}
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={() => {
+              triggerHaptic(15);
+              setShowDeviceInspector(true);
+            }}
+            className="flex items-center gap-1.5 px-2.5 py-1 sm:py-1.5 rounded-full bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 text-[10px] font-mono font-bold transition-all"
+            title={`Cross-Device API Inspector: ${deviceCapabilities.deviceType.toUpperCase()} (Alt+D)`}
+          >
+            {deviceCapabilities.deviceType === 'mobile' ? (
+              <Smartphone size={13} />
+            ) : deviceCapabilities.deviceType === 'tablet' ? (
+              <Tablet size={13} />
+            ) : (
+              <Monitor size={13} />
+            )}
+            <span className="hidden md:inline uppercase">{deviceCapabilities.deviceType}</span>
+          </motion.button>
+
+          {/* Command Palette Trigger */}
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={() => {
+              triggerHaptic(15);
+              setShowCommandPalette(true);
+            }}
+            className="flex items-center gap-1 px-2.5 py-1 sm:py-1.5 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 text-[10px] font-mono transition-all"
+            title="Command Palette (Cmd+K / Ctrl+K)"
+          >
+            <Search size={13} />
+            <span className="hidden sm:inline font-bold">⌘K</span>
+          </motion.button>
+
           {/* Active User Account Profile Pill */}
           <motion.button
             whileHover={{ scale: 1.05 }}
@@ -887,14 +1443,11 @@ const App: React.FC = () => {
               triggerHaptic(15);
               setShowUserModal(true);
             }}
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#182338] hover:bg-[#1f2e47] border border-[#FAAD3F]/40 text-white text-[10px] font-mono transition-all shadow-sm"
+            className="flex items-center gap-1.5 px-2 py-1 sm:py-1.5 rounded-full bg-[#182338] hover:bg-[#1f2e47] border border-[#FAAD3F]/40 text-white text-[10px] font-mono transition-all shadow-sm"
             title="User Profile & Identity Matrix"
           >
-            <span className="text-sm">{currentUser.avatar}</span>
+            <span className="text-xs sm:text-sm">{currentUser.avatar}</span>
             <span className="hidden md:inline font-bold text-slate-200">{currentUser.name.split(' ')[0]}</span>
-            <span className="text-[9px] text-[#FAAD3F] font-bold uppercase hidden lg:inline">
-              ({currentUser.role.split(' ')[0]})
-            </span>
           </motion.button>
 
           {messages.length > 0 && (
@@ -902,10 +1455,10 @@ const App: React.FC = () => {
               whileHover={{ scale: 1.1 }}
               whileTap={{ scale: 0.9 }}
               onClick={clearChat}
-              className="p-2 hover:bg-[#182236] rounded-full transition-colors text-slate-400 hover:text-red-400"
+              className="p-1.5 sm:p-2 hover:bg-[#182236] rounded-full transition-colors text-slate-400 hover:text-red-400"
               title="Clear Chat History"
             >
-              <RotateCcw size={18} />
+              <RotateCcw size={16} />
             </motion.button>
           )}
 
@@ -913,10 +1466,10 @@ const App: React.FC = () => {
             whileHover={{ scale: 1.1 }}
             whileTap={{ scale: 0.9 }}
             onClick={() => setIsDarkMode(!isDarkMode)}
-            className="p-2 hover:bg-[#182236] rounded-full transition-colors text-slate-400 hover:text-[#FAAD3F]"
+            className="p-1.5 sm:p-2 hover:bg-[#182236] rounded-full transition-colors text-slate-400 hover:text-[#FAAD3F]"
             title="Toggle Theme"
           >
-            {isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
+            {isDarkMode ? <Sun size={16} /> : <Moon size={16} />}
           </motion.button>
         </div>
       </header>
@@ -1240,49 +1793,58 @@ const App: React.FC = () => {
         )}
       </AnimatePresence>
 
-      {/* Chat Area */}
+      {/* Chat Area - flex-1 min-h-0 ensures it occupies strictly the space between header and footer with zero overlapping */}
       <main 
         ref={mainRef} 
         onScroll={handleScroll} 
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
-        className="flex-1 overflow-y-auto px-4 md:px-0 pb-36 pt-4 relative"
+        className="flex-1 min-h-0 overflow-y-auto px-4 md:px-0 py-3 relative"
       >
-        <div className="max-w-3xl mx-auto h-full">
+        <div className="max-w-3xl mx-auto min-h-full flex flex-col">
           {messages.length === 0 ? (
-            <ChatPlaceholder
-              userName={currentUser.name.split(' ')[0]}
-              onSelectPrompt={(text, opts) => handleSendMessage(text, { mode: opts?.mode || mode, image: opts?.image })}
-              onLiveToggle={toggleLiveMode}
-              onOpenCeezaVoice={() => setShowCeezaVoiceModal(true)}
-              onOpenAssistantTasks={() => setShowAndroidModal(true)}
-              mode={mode}
-              onToggleThinking={toggleThinking}
-            />
+            <div className="my-auto w-full py-4">
+              <ChatPlaceholder
+                userName={currentUser.name.split(' ')[0]}
+                onSelectPrompt={(text, opts) => handleSendMessage(text, { 
+                  mode: opts?.mode || mode, 
+                  image: opts?.image,
+                  enableSearchGrounding: opts?.enableSearchGrounding !== undefined ? opts.enableSearchGrounding : isSearchGrounding 
+                })}
+                onLiveToggle={toggleLiveMode}
+                onOpenCeezaVoice={() => setShowCeezaVoiceModal(true)}
+                onOpenAssistantTasks={() => setShowAndroidModal(true)}
+                mode={mode}
+                onToggleThinking={toggleThinking}
+                isSearchGrounding={isSearchGrounding}
+                onToggleSearchGrounding={toggleSearchGrounding}
+                onOpenArtifacts={() => setShowArtifactsModal(true)}
+                onOpenWorkspaces={() => setShowWorkspaceModal(true)}
+              />
+            </div>
           ) : (
-            <div className="space-y-1 py-2">
+            <div className="space-y-1 py-2 pb-4 w-full">
               <AnimatePresence initial={false}>
                 {messages.map((msg) => (
-                  <ChatMessage 
-                    key={msg.id} 
-                    message={msg} 
-                    onRate={handleRateMessage} 
-                    onImageClick={(src) => setPreviewImageSrc(src)}
-                    onPlayTTS={(text) => playTTS(text)}
-                  />
+                  <div key={msg.id} id={`msg-${msg.id}`} className="transition-all duration-300 rounded-2xl">
+                    <ChatMessage 
+                      message={msg} 
+                      onRate={handleRateMessage} 
+                      onImageClick={(src) => setPreviewImageSrc(src)}
+                      onPlayTTS={(text) => playTTS(text)}
+                      onReact={handleReactMessage}
+                      onToggleSave={handleToggleSaveMessage}
+                      onOpenInArtifacts={(codeText) => handleOpenInArtifacts(codeText)}
+                    />
+                  </div>
                 ))}
               </AnimatePresence>
               {isLoading && (
-                <motion.div 
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  className="flex justify-start mb-6 animate-pulse px-2"
-                >
-                  <div className="glass px-4 py-2.5 rounded-2xl rounded-tl-sm text-slate-300 text-xs font-mono uppercase tracking-widest flex items-center gap-2.5">
-                    <IndicatingOrb status="thinking" size={15} theme={orbTheme} />
-                    <span>Neural processing...</span>
-                  </div>
-                </motion.div>
+                <NeuralProcessingIndicator 
+                  theme={orbTheme} 
+                  isThinking={mode === ModelMode.Thinking} 
+                  isSearchGrounding={isSearchGrounding} 
+                />
               )}
               <div ref={messagesEndRef} />
             </div>
@@ -1298,7 +1860,7 @@ const App: React.FC = () => {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 12, scale: 0.9 }}
             onClick={scrollToBottom}
-            className="fixed bottom-32 right-6 z-40 flex items-center gap-2 px-4 py-2 rounded-full bg-[#111726]/90 text-[#F38020] border border-[#F38020]/40 shadow-2xl text-xs font-mono uppercase font-bold backdrop-blur-md hover:bg-[#182236] transition-all cursor-pointer"
+            className="fixed bottom-36 md:bottom-40 right-6 z-40 flex items-center gap-2 px-4 py-2 rounded-full bg-[#111726]/95 text-[#F38020] border border-[#F38020]/40 shadow-2xl text-xs font-mono uppercase font-bold backdrop-blur-md hover:bg-[#182236] transition-all cursor-pointer"
           >
             <ArrowDown size={14} className="animate-bounce text-[#FAAD3F]" />
             <span>Scroll to latest</span>
@@ -1322,8 +1884,8 @@ const App: React.FC = () => {
         isThinking={mode === ModelMode.Thinking}
       />
 
-      {/* Input Bar */}
-      <footer className="fixed bottom-0 left-0 right-0 p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] z-40 bg-gradient-to-t from-black via-black/95 to-transparent pt-4">
+      {/* Input Bar Footer - Docked flex-shrink-0 so input block never overlays chat content or template cards */}
+      <footer className="flex-shrink-0 w-full z-40 bg-gradient-to-t from-black via-black/95 to-black/85 backdrop-blur-xl border-t border-white/10 px-3 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
         <InputBar 
           onSendMessage={handleSendMessage} 
           onLiveToggle={toggleLiveMode}
@@ -1333,11 +1895,14 @@ const App: React.FC = () => {
           followUpChips={followUpChips}
           onSelectChip={(chipText) => {
             handleSendMessage(chipText, { 
-              mode: mode === ModelMode.Thinking ? ModelMode.Thinking : ModelMode.Pro 
+              mode: mode === ModelMode.Thinking ? ModelMode.Thinking : ModelMode.Pro,
+              enableSearchGrounding: isSearchGrounding 
             });
           }}
           currentMode={mode}
           onToggleMode={toggleThinking}
+          isSearchGrounding={isSearchGrounding}
+          onToggleSearchGrounding={toggleSearchGrounding}
         />
       </footer>
 
@@ -1372,6 +1937,84 @@ const App: React.FC = () => {
         isOpen={showCeezaVoiceModal}
         onClose={() => setShowCeezaVoiceModal(false)}
         onAudioRecorded={handleAudioRecorded}
+      />
+
+      {/* Saved Intelligence & Bookmarks Modal */}
+      <SavedResponsesModal
+        isOpen={showSavedModal}
+        onClose={() => setShowSavedModal(false)}
+        savedMessages={savedMessages}
+        allMessages={messages}
+        onToggleSave={handleToggleSaveMessage}
+        onBatchDeleteSaved={handleBatchDeleteSaved}
+        onReact={handleReactMessage}
+        onPlayTTS={playTTS}
+        onJumpToMessage={handleJumpToMessage}
+      />
+
+      {/* Artifacts Workbench Modal & Sandbox */}
+      <ArtifactsWorkbench
+        isOpen={showArtifactsModal}
+        onClose={() => setShowArtifactsModal(false)}
+        artifacts={artifacts}
+        activeArtifactId={activeArtifactId}
+        onSelectArtifact={(id) => setActiveArtifactId(id)}
+        onSaveArtifact={handleSaveArtifact}
+        onDeleteArtifact={handleDeleteArtifact}
+        onCreateArtifact={handleCreateArtifact}
+        workspaceName={activeWorkspace.name}
+      />
+
+      {/* Intelligent Workspace Manager Modal */}
+      <WorkspaceManagerModal
+        isOpen={showWorkspaceModal}
+        onClose={() => setShowWorkspaceModal(false)}
+        workspaces={workspaces}
+        activeWorkspaceId={activeWorkspaceId}
+        onSwitchWorkspace={handleSwitchWorkspace}
+        onCreateWorkspace={handleCreateWorkspace}
+        onDeleteWorkspace={handleDeleteWorkspace}
+        onUpdateScratchpad={handleUpdateScratchpad}
+        onSynthesizeScratchpadToArtifact={handleSynthesizeScratchpadToArtifact}
+        onExportWorkspaces={handleExportWorkspaces}
+        onImportWorkspaces={handleImportWorkspaces}
+      />
+
+      {/* Internal Engines Matrix & Telemetry Modal */}
+      <EnginesDashboardModal
+        isOpen={showEnginesModal}
+        onClose={() => setShowEnginesModal(false)}
+        config={engineConfig}
+        onUpdateConfig={setEngineConfig}
+        telemetry={engineTelemetry}
+        lastLatencyMs={lastLatencyMs || 142}
+        orbTheme={orbTheme}
+      />
+
+      {/* Cross-Device API Inspector Modal */}
+      <DeviceAPIInspectorModal
+        isOpen={showDeviceInspector}
+        onClose={() => setShowDeviceInspector(false)}
+        capabilities={deviceCapabilities}
+        onInstallPWA={handleInstallPWA}
+        canInstallPWA={!isStandalone && !!deferredPrompt}
+      />
+
+      {/* Global Command Palette Modal (Cmd+K / Ctrl+K) */}
+      <CommandPaletteModal
+        isOpen={showCommandPalette}
+        onClose={() => setShowCommandPalette(false)}
+        onOpenArtifacts={() => setShowArtifactsModal(true)}
+        onOpenWorkspaces={() => setShowWorkspaceModal(true)}
+        onOpenEngines={() => setShowEnginesModal(true)}
+        onOpenDeviceInspector={() => setShowDeviceInspector(true)}
+        onOpenSaved={() => setShowSavedModal(true)}
+        onOpenAndroidTasks={() => setShowAndroidModal(true)}
+        onOpenLiveVoice={toggleLiveMode}
+        onOpenCeezaVoice={() => setShowCeezaVoiceModal(true)}
+        onToggleThinking={toggleThinking}
+        onToggleSearchGrounding={toggleSearchGrounding}
+        onClearChat={clearChat}
       />
     </div>
   );

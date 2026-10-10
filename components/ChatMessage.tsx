@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Message, Sender } from '../types';
-import { User, Sparkles, BrainCircuit, ThumbsUp, ThumbsDown, Maximize2, ChevronDown, ChevronUp, Clock, GitCommit, Copy, Check, Volume2, VolumeX, Mic } from 'lucide-react';
+import { User, Sparkles, BrainCircuit, ThumbsUp, ThumbsDown, Maximize2, ChevronDown, ChevronUp, Clock, GitCommit, Copy, Check, Volume2, VolumeX, Mic, Globe, ExternalLink, Search, Smile, Bookmark, Flag, Layers } from 'lucide-react';
 import { triggerHaptic } from '../utils/haptics';
 
 interface ChatMessageProps {
@@ -9,19 +9,44 @@ interface ChatMessageProps {
   onRate?: (id: string, rating: 'up' | 'down') => void;
   onImageClick?: (src: string) => void;
   onPlayTTS?: (text: string) => void;
+  onReact?: (id: string, emoji: string) => void;
+  onToggleSave?: (id: string) => void;
+  onOpenInArtifacts?: (text: string) => void;
 }
+
+const EMOJI_OPTIONS = ['👍', '❤️', '🔥', '💡', '🎯', '🚀', '⭐', '🔖', '🚩', '📌', '👏', '🤔'];
 
 export const ChatMessage: React.FC<ChatMessageProps> = ({ 
   message, 
   onRate, 
   onImageClick,
-  onPlayTTS 
+  onPlayTTS,
+  onReact,
+  onToggleSave,
+  onOpenInArtifacts,
 }) => {
   const isUser = message.sender === Sender.User;
   const [isExpanded, setIsExpanded] = useState(false);
   const [showReasoningChain, setShowReasoningChain] = useState(false);
+  const [showAllSources, setShowAllSources] = useState(false);
   const [hasCopied, setHasCopied] = useState(false);
   const [isPlayingTTS, setIsPlayingTTS] = useState(false);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const pickerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
+        setShowEmojiPicker(false);
+      }
+    };
+    if (showEmojiPicker) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showEmojiPicker]);
 
   const LONG_TEXT_THRESHOLD = 500;
   const isLongText = message.text && message.text.length > LONG_TEXT_THRESHOLD;
@@ -70,6 +95,11 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({
     "Phase 4: Synthesize high-confidence response with zero fluff."
   ];
 
+  const groundingSources = message.groundingMetadata?.sources || [];
+  const searchQueries = message.groundingMetadata?.searchQueries || [];
+  const visibleSources = showAllSources ? groundingSources : groundingSources.slice(0, 4);
+  const hasHiddenSources = groundingSources.length > 4;
+
   return (
     <motion.div 
       initial={{ opacity: 0, y: 10, scale: 0.98 }}
@@ -98,6 +128,90 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({
               : 'bg-[#0f1726]/90 text-slate-100 border border-white/10 rounded-tl-sm'
           }`}>
             
+            {/* Search Grounding Header & Live Web Sources */}
+            {message.groundingMetadata && (searchQueries.length > 0 || groundingSources.length > 0) && (
+              <div className="mb-3.5 p-3 sm:p-3.5 rounded-xl bg-gradient-to-r from-[#0369a1]/20 via-[#0284c7]/10 to-transparent border border-[#38bdf8]/30 space-y-2.5">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <div className="flex items-center gap-2">
+                    <div className="p-1 rounded-md bg-[#38bdf8]/20 text-[#38bdf8]">
+                      <Globe size={14} className="animate-pulse" />
+                    </div>
+                    <div>
+                      <span className="block text-[11px] font-mono uppercase tracking-wider text-[#38bdf8] font-bold">
+                        Search Grounding · Live Web Sources
+                      </span>
+                    </div>
+                  </div>
+
+                  <span className="text-[10px] font-mono text-slate-400 bg-black/40 px-2 py-0.5 rounded-full border border-white/5">
+                    {groundingSources.length} Verified {groundingSources.length === 1 ? 'Source' : 'Sources'}
+                  </span>
+                </div>
+
+                {/* Executed Web Search Queries */}
+                {searchQueries.length > 0 && (
+                  <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                    <span className="text-[10px] font-mono text-slate-400 flex items-center gap-1">
+                      <Search size={11} className="text-[#38bdf8]" /> Searched:
+                    </span>
+                    {searchQueries.map((query, qIdx) => (
+                      <span
+                        key={qIdx}
+                        className="inline-flex items-center px-2 py-0.5 rounded-md bg-black/50 border border-white/10 text-[10px] font-mono text-slate-300"
+                      >
+                        "{query}"
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                {/* Grounding Source Citation Cards */}
+                {groundingSources.length > 0 && (
+                  <div className="space-y-1.5 pt-1">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {visibleSources.map((source, sIdx) => (
+                        <a
+                          key={sIdx}
+                          href={source.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={() => triggerHaptic(15)}
+                          className="group flex items-start justify-between gap-2 p-2 rounded-lg bg-black/60 hover:bg-[#0c1f38] border border-white/10 hover:border-[#38bdf8]/50 transition-all text-left cursor-pointer"
+                          title={source.url}
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5 mb-0.5">
+                              <span className="w-1.5 h-1.5 rounded-full bg-[#38bdf8] flex-shrink-0" />
+                              <span className="text-[10px] font-mono uppercase font-bold text-[#38bdf8] truncate">
+                                {source.domain || 'web'}
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-slate-200 line-clamp-1 group-hover:text-white group-hover:underline">
+                              {source.title}
+                            </p>
+                          </div>
+                          <ExternalLink size={12} className="text-slate-400 group-hover:text-[#38bdf8] group-hover:translate-x-0.5 transition-all flex-shrink-0 mt-1" />
+                        </a>
+                      ))}
+                    </div>
+
+                    {hasHiddenSources && (
+                      <button
+                        onClick={() => {
+                          triggerHaptic(10);
+                          setShowAllSources(prev => !prev);
+                        }}
+                        className="text-[10px] font-mono text-[#38bdf8] hover:underline flex items-center gap-1 mt-1 pt-1"
+                      >
+                        <span>{showAllSources ? 'Show fewer sources' : `+ View ${groundingSources.length - 4} more sources`}</span>
+                        {showAllSources ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Thinking / Reasoning Chain Header */}
             {message.isThinking && (
               <div className="mb-3.5 p-3 rounded-xl bg-[#4285F4]/10 border border-[#4285F4]/30 space-y-2">
@@ -200,6 +314,32 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({
                 {isExpanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
               </button>
             )}
+            {/* Active Reactions Display */}
+            {message.reactions && Object.keys(message.reactions).length > 0 && (
+              <div className="flex items-center gap-1.5 flex-wrap pt-2.5">
+                {Object.entries(message.reactions).map(([emoji, count]) => {
+                  const isUserReacted = message.userReactions?.includes(emoji);
+                  return (
+                    <button
+                      key={emoji}
+                      onClick={() => {
+                        triggerHaptic(15);
+                        onReact?.(message.id, emoji);
+                      }}
+                      className={`flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs transition-all border cursor-pointer ${
+                        isUserReacted
+                          ? 'bg-[#FAAD3F]/20 text-[#FAAD3F] border-[#FAAD3F]/40 font-bold shadow-sm'
+                          : 'bg-black/40 text-slate-300 border-white/10 hover:border-white/25'
+                      }`}
+                      title={isUserReacted ? `You reacted with ${emoji} (Click to remove)` : `React with ${emoji}`}
+                    >
+                      <span>{emoji}</span>
+                      <span className="text-[10px] font-mono">{count}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           {/* Action Row below bubble */}
@@ -209,59 +349,157 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({
               {formattedTime}
             </span>
 
-            {/* Actions for Bot Messages: Copy, TTS, Rating */}
-            {!isUser && (
-              <div className="flex items-center gap-2">
+            {/* Reactions & Actions */}
+            <div className="flex items-center gap-2">
+              {/* Emoji Reaction Trigger Popover */}
+              <div className="relative" ref={pickerRef}>
                 <button
-                  onClick={handleCopy}
-                  className="p-1 hover:text-white transition-colors"
-                  title="Copy message"
+                  onClick={() => {
+                    triggerHaptic(15);
+                    setShowEmojiPicker(prev => !prev);
+                  }}
+                  className={`p-1 transition-colors ${showEmojiPicker ? 'text-[#FAAD3F]' : 'hover:text-white'}`}
+                  title="Add reaction"
                 >
-                  {hasCopied ? (
-                    <span className="flex items-center gap-1 text-emerald-400 text-[10px] font-mono">
-                      <Check size={12} /> Copied
-                    </span>
-                  ) : (
-                    <Copy size={12} />
-                  )}
+                  <Smile size={13} />
                 </button>
 
-                {onPlayTTS && (
-                  <button
-                    onClick={handleSpeech}
-                    className={`p-1 transition-colors ${isPlayingTTS ? 'text-[#FAAD3F]' : 'hover:text-white'}`}
-                    title="Read response aloud"
-                  >
-                    <Volume2 size={13} className={isPlayingTTS ? 'animate-pulse' : ''} />
-                  </button>
-                )}
-
-                {onRate && (
-                  <>
-                    <button
-                      onClick={() => {
-                        triggerHaptic(15);
-                        onRate(message.id, 'up');
-                      }}
-                      className={`p-1 transition-colors ${message.feedback === 'up' ? 'text-emerald-400' : 'hover:text-emerald-400'}`}
-                      title="Good response"
+                <AnimatePresence>
+                  {showEmojiPicker && (
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.9, y: 5 }}
+                      animate={{ opacity: 1, scale: 1, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.9, y: 5 }}
+                      className="absolute bottom-full left-0 mb-2 p-1.5 rounded-2xl bg-[#0f172a] border border-white/15 shadow-2xl flex items-center gap-1 z-30 backdrop-blur-xl max-w-[92vw] overflow-x-auto"
                     >
-                      <ThumbsUp size={12} fill={message.feedback === 'up' ? 'currentColor' : 'none'} />
-                    </button>
-                    <button
-                      onClick={() => {
-                        triggerHaptic(15);
-                        onRate(message.id, 'down');
-                      }}
-                      className={`p-1 transition-colors ${message.feedback === 'down' ? 'text-red-400' : 'hover:text-red-400'}`}
-                      title="Bad response"
-                    >
-                      <ThumbsDown size={12} fill={message.feedback === 'down' ? 'currentColor' : 'none'} />
-                    </button>
-                  </>
-                )}
+                      {EMOJI_OPTIONS.map((emo) => {
+                        const isReacted = message.userReactions?.includes(emo);
+                        return (
+                          <button
+                            key={emo}
+                            onClick={() => {
+                              triggerHaptic(15);
+                              onReact?.(message.id, emo);
+                              setShowEmojiPicker(false);
+                            }}
+                            className={`w-7 h-7 rounded-xl flex items-center justify-center text-sm transition-all hover:scale-125 cursor-pointer flex-shrink-0 ${
+                              isReacted ? 'bg-[#FAAD3F]/25 border border-[#FAAD3F]/40' : 'hover:bg-white/10'
+                            }`}
+                            title={`React ${emo}`}
+                          >
+                            {emo}
+                          </button>
+                        );
+                      })}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
-            )}
+
+              {/* Bookmark AI Response */}
+              {!isUser && onToggleSave && (
+                <button
+                  onClick={() => {
+                    triggerHaptic(20);
+                    onToggleSave(message.id);
+                  }}
+                  className={`p-1 transition-colors ${
+                    message.isSaved 
+                      ? 'text-[#FAAD3F]' 
+                      : 'hover:text-[#FAAD3F]'
+                  }`}
+                  title={message.isSaved ? "Saved to Bookmarks (Click to remove)" : "Bookmark response for later review in Saved view"}
+                >
+                  <Bookmark size={13} className={message.isSaved ? "fill-[#FAAD3F]" : ""} />
+                </button>
+              )}
+
+              {/* Flag AI Response for Later Review */}
+              {!isUser && onReact && (
+                <button
+                  onClick={() => {
+                    triggerHaptic(20);
+                    onReact(message.id, '🚩');
+                  }}
+                  className={`p-1 transition-colors ${
+                    message.userReactions?.includes('🚩') || message.reactions?.['🚩']
+                      ? 'text-rose-400' 
+                      : 'hover:text-rose-400'
+                  }`}
+                  title={message.userReactions?.includes('🚩') ? "Flagged for review (Click to unflag)" : "Flag response for later review in Saved view"}
+                >
+                  <Flag size={13} className={message.userReactions?.includes('🚩') || message.reactions?.['🚩'] ? "fill-rose-400" : ""} />
+                </button>
+              )}
+
+              {/* Actions for Bot Messages: Artifact Sandbox, Copy, TTS, Rating */}
+              {!isUser && (
+                <>
+                  {message.text.includes('```') && onOpenInArtifacts && (
+                    <button
+                      onClick={() => {
+                        triggerHaptic(15);
+                        onOpenInArtifacts(message.text);
+                      }}
+                      className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-[#FAAD3F]/15 hover:bg-[#FAAD3F]/25 text-[#FAAD3F] border border-[#FAAD3F]/30 text-[10px] font-mono font-bold transition-all cursor-pointer mr-1"
+                      title="Open code block in live Artifacts Sandbox"
+                    >
+                      <Layers size={11} />
+                      <span>Sandbox</span>
+                    </button>
+                  )}
+
+                  <button
+                    onClick={handleCopy}
+                    className="p-1 hover:text-white transition-colors"
+                    title="Copy message"
+                  >
+                    {hasCopied ? (
+                      <span className="flex items-center gap-1 text-emerald-400 text-[10px] font-mono">
+                        <Check size={12} /> Copied
+                      </span>
+                    ) : (
+                      <Copy size={12} />
+                    )}
+                  </button>
+
+                  {onPlayTTS && (
+                    <button
+                      onClick={handleSpeech}
+                      className={`p-1 transition-colors ${isPlayingTTS ? 'text-[#FAAD3F]' : 'hover:text-white'}`}
+                      title="Read response aloud"
+                    >
+                      <Volume2 size={13} className={isPlayingTTS ? 'animate-pulse' : ''} />
+                    </button>
+                  )}
+
+                  {onRate && (
+                    <>
+                      <button
+                        onClick={() => {
+                          triggerHaptic(15);
+                          onRate(message.id, 'up');
+                        }}
+                        className={`p-1 transition-colors ${message.feedback === 'up' ? 'text-emerald-400' : 'hover:text-emerald-400'}`}
+                        title="Good response"
+                      >
+                        <ThumbsUp size={12} fill={message.feedback === 'up' ? 'currentColor' : 'none'} />
+                      </button>
+                      <button
+                        onClick={() => {
+                          triggerHaptic(15);
+                          onRate(message.id, 'down');
+                        }}
+                        className={`p-1 transition-colors ${message.feedback === 'down' ? 'text-red-400' : 'hover:text-red-400'}`}
+                        title="Bad response"
+                      >
+                        <ThumbsDown size={12} fill={message.feedback === 'down' ? 'currentColor' : 'none'} />
+                      </button>
+                    </>
+                  )}
+                </>
+              )}
+            </div>
           </div>
 
         </div>
