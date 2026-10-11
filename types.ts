@@ -126,6 +126,7 @@ export interface Workspace {
 // --- Internal Engine & Telemetry Types ---
 export type EngineModuleId = 
   | 'cortex_neural'
+  | 'kokoro_voice_engine'
   | 'search_grounding'
   | 'audio_vocal_dsp'
   | 'multimodal_vision'

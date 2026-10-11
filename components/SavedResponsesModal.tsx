@@ -166,7 +166,7 @@ export const SavedResponsesModal: React.FC<SavedResponsesModalProps> = ({
   };
 
   // Export only currently selected items
-  const handleExportSelected = async (format: 'markdown' | 'json' | 'download_md' = 'markdown') => {
+  const handleExportSelected = async (format: 'markdown' | 'json' | 'download_md' | 'txt' | 'pdf' = 'markdown') => {
     if (selectedIds.size === 0) return;
     try {
       triggerHaptic(20);
@@ -192,6 +192,77 @@ export const SavedResponsesModal: React.FC<SavedResponsesModalProps> = ({
         a.download = `saved_ai_responses_${Date.now()}.json`;
         a.click();
         URL.revokeObjectURL(url);
+      } else if (format === 'txt') {
+        const txtContent = `GOD AI - SAVED RESPONSES ARCHIVE\nExported: ${new Date().toLocaleString()}\nTotal Bookmarks: ${itemsToExport.length}\n${'='.repeat(60)}\n\n` +
+          itemsToExport
+            .map((m, idx) => {
+              const prompt = promptMap.get(m.id);
+              const dateStr = new Date(m.timestamp).toLocaleString();
+              return `[#${idx + 1}] Date: ${dateStr}\n${prompt ? `PROMPT: ${prompt}\n\n` : ''}RESPONSE:\n${m.text}\n\n${'-'.repeat(60)}\n`;
+            })
+            .join('\n');
+        const blob = new Blob([txtContent], { type: 'text/plain;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `saved_responses_${Date.now()}.txt`;
+        a.click();
+        URL.revokeObjectURL(url);
+      } else if (format === 'pdf') {
+        // Generate formatted clean printable document and invoke browser Print/PDF engine
+        const printWindow = window.open('', '_blank');
+        if (printWindow) {
+          const printableHtml = `
+            <!DOCTYPE html>
+            <html>
+              <head>
+                <title>GOD AI - Saved Responses (${itemsToExport.length} items)</title>
+                <style>
+                  @page { margin: 20mm; size: A4; }
+                  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #111; line-height: 1.6; padding: 20px; font-size: 13px; }
+                  header { border-bottom: 2px solid #ea580c; padding-bottom: 12px; margin-bottom: 24px; display: flex; justify-content: space-between; align-items: flex-end; }
+                  h1 { margin: 0; font-size: 22px; color: #ea580c; }
+                  .meta { font-size: 11px; color: #666; font-family: monospace; }
+                  .card { border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin-bottom: 20px; page-break-inside: avoid; background: #fafafa; }
+                  .card-title { font-weight: bold; font-size: 12px; color: #64748b; font-family: monospace; margin-bottom: 6px; }
+                  .prompt { background: #f1f5f9; border-left: 3px solid #f97316; padding: 8px 12px; margin-bottom: 12px; font-style: italic; border-radius: 4px; }
+                  .response { white-space: pre-wrap; font-size: 13px; color: #1e293b; }
+                  footer { margin-top: 30px; text-align: center; font-size: 10px; color: #94a3b8; font-family: monospace; }
+                </style>
+              </head>
+              <body>
+                <header>
+                  <div>
+                    <h1>GOD AI · Saved Responses</h1>
+                    <div class="meta">Exported on: ${new Date().toLocaleString()} · ${itemsToExport.length} selected items</div>
+                  </div>
+                </header>
+                ${itemsToExport
+                  .map((m, idx) => {
+                    const prompt = promptMap.get(m.id);
+                    const dateStr = new Date(m.timestamp).toLocaleString();
+                    return `
+                      <div class="card">
+                        <div class="card-title">ITEM #${idx + 1} · ${dateStr}</div>
+                        ${prompt ? `<div class="prompt"><strong>Prompt:</strong> ${prompt.replace(/</g, '&lt;')}</div>` : ''}
+                        <div class="response">${m.text.replace(/</g, '&lt;')}</div>
+                      </div>
+                    `;
+                  })
+                  .join('')}
+                <footer>GOD AI Neural Engine · Saved Intelligence Archive</footer>
+                <script>
+                  window.onload = function() {
+                    window.print();
+                  };
+                </script>
+              </body>
+            </html>
+          `;
+          printWindow.document.open();
+          printWindow.document.write(printableHtml);
+          printWindow.document.close();
+        }
       } else if (format === 'download_md') {
         const mdContent = `# Exported AI Responses (${itemsToExport.length} items)\nExported on: ${new Date().toLocaleString()}\n\n` +
           itemsToExport
@@ -403,7 +474,37 @@ export const SavedResponsesModal: React.FC<SavedResponsesModalProps> = ({
                     title="Download selected items as .md file"
                   >
                     <FileText size={13} className="text-sky-400" />
-                    <span className="hidden sm:inline">Save .md</span>
+                    <span className="hidden sm:inline">.MD</span>
+                  </button>
+
+                  {/* Download Selected Plain TXT */}
+                  <button
+                    disabled={selectedIds.size === 0}
+                    onClick={() => handleExportSelected('txt')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono transition-all cursor-pointer ${
+                      selectedIds.size > 0
+                        ? 'bg-white/10 hover:bg-white/20 text-white border border-white/20'
+                        : 'opacity-40 pointer-events-none text-slate-500'
+                    }`}
+                    title="Download selected items as plain text (.txt) file"
+                  >
+                    <Download size={13} className="text-amber-400" />
+                    <span>TXT</span>
+                  </button>
+
+                  {/* Print / Save as PDF */}
+                  <button
+                    disabled={selectedIds.size === 0}
+                    onClick={() => handleExportSelected('pdf')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono transition-all cursor-pointer ${
+                      selectedIds.size > 0
+                        ? 'bg-[#ea580c]/20 hover:bg-[#ea580c]/30 text-orange-300 border border-[#ea580c]/40 font-bold'
+                        : 'opacity-40 pointer-events-none text-slate-500'
+                    }`}
+                    title="Open formatted print-ready view to Save as PDF"
+                  >
+                    <FileText size={13} className="text-orange-400" />
+                    <span>PDF</span>
                   </button>
 
                   {/* Download Selected JSON */}

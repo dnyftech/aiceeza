@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { EngineConfig, EngineTelemetry, EngineModuleInfo, OrbTheme } from '../types';
 import { triggerHaptic } from '../utils/haptics';
+import { kokoroService } from '../services/kokoroService';
 
 interface EnginesDashboardModalProps {
   isOpen: boolean;
@@ -53,6 +54,15 @@ export const EnginesDashboardModal: React.FC<EnginesDashboardModalProps> = ({
       latencyMs: lastLatencyMs,
       description: 'Primary high-intelligence multimodal transformer powering reasoning, conversation, and code generation.',
       capabilities: ['Deep Thinking Cortex (32k)', 'Multimodal Audio & Vision', 'Zero-shot Reasoning']
+    },
+    {
+      id: 'kokoro_voice_engine',
+      name: 'Kokoro-82M Neural Voice Engine',
+      badge: 'Local Speech Model',
+      status: kokoroService.isReady() ? 'active' : 'standby',
+      latencyMs: 95,
+      description: '82-million parameter neural TTS transformer running client-side with WebAssembly and WebGPU for private, natural human intonation.',
+      capabilities: ['82M Open Weights', '100% In-Browser Privacy', '14+ English & British Voices']
     },
     {
       id: 'search_grounding',

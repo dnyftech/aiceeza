@@ -9,6 +9,8 @@ interface ChatMessageProps {
   onRate?: (id: string, rating: 'up' | 'down') => void;
   onImageClick?: (src: string) => void;
   onPlayTTS?: (text: string) => void;
+  onStopTTS?: () => void;
+  isSpeaking?: boolean;
   onReact?: (id: string, emoji: string) => void;
   onToggleSave?: (id: string) => void;
   onOpenInArtifacts?: (text: string) => void;
@@ -21,6 +23,8 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({
   onRate, 
   onImageClick,
   onPlayTTS,
+  onStopTTS,
+  isSpeaking = false,
   onReact,
   onToggleSave,
   onOpenInArtifacts,
@@ -76,12 +80,18 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({
     }
   };
 
+  const isThisMessageSpeaking = isSpeaking || isPlayingTTS;
+
   const handleSpeech = () => {
-    if (onPlayTTS && message.text) {
-      triggerHaptic(20);
+    triggerHaptic(20);
+    if (isThisMessageSpeaking && onStopTTS) {
+      setIsPlayingTTS(false);
+      onStopTTS();
+    } else if (onPlayTTS && message.text) {
       setIsPlayingTTS(true);
       onPlayTTS(message.text);
-      setTimeout(() => setIsPlayingTTS(false), 4000);
+      // fallback reset after reasonable time
+      setTimeout(() => setIsPlayingTTS(false), 8000);
     }
   };
 
@@ -466,10 +476,14 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({
                   {onPlayTTS && (
                     <button
                       onClick={handleSpeech}
-                      className={`p-1 transition-colors ${isPlayingTTS ? 'text-[#FAAD3F]' : 'hover:text-white'}`}
-                      title="Read response aloud"
+                      className={`p-1 transition-colors ${isThisMessageSpeaking ? 'text-[#FAAD3F]' : 'hover:text-white'}`}
+                      title={isThisMessageSpeaking ? "Stop voice playback" : "Read response aloud"}
                     >
-                      <Volume2 size={13} className={isPlayingTTS ? 'animate-pulse' : ''} />
+                      {isThisMessageSpeaking ? (
+                        <VolumeX size={13} className="animate-pulse text-[#FAAD3F]" />
+                      ) : (
+                        <Volume2 size={13} />
+                      )}
                     </button>
                   )}
 

@@ -15,7 +15,8 @@ import {
   X,
   ArrowRight,
   Terminal,
-  FileCode
+  FileCode,
+  Volume2
 } from 'lucide-react';
 import { triggerHaptic } from '../utils/haptics';
 
@@ -40,6 +41,8 @@ interface CommandPaletteModalProps {
   onOpenAndroidTasks: () => void;
   onOpenLiveVoice: () => void;
   onOpenCeezaVoice: () => void;
+  onOpenKokoroVoice?: () => void;
+  onOpenAssistantOverlay?: () => void;
   onToggleThinking: () => void;
   onToggleSearchGrounding: () => void;
   onClearChat: () => void;
@@ -56,6 +59,8 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
   onOpenAndroidTasks,
   onOpenLiveVoice,
   onOpenCeezaVoice,
+  onOpenKokoroVoice,
+  onOpenAssistantOverlay,
   onToggleThinking,
   onToggleSearchGrounding,
   onClearChat,
@@ -108,6 +113,24 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
       icon: <Mic size={16} className="text-[#FAAD3F]" />,
       action: onOpenLiveVoice,
       shortcut: 'Alt+L'
+    },
+    {
+      id: 'mobile_assistant',
+      title: 'Mobile Digital Assistant (Ella / Gemini)',
+      subtitle: 'Open bottom sheet digital assistant with camera lens & voice intents',
+      category: 'Tools',
+      icon: <Smartphone size={16} className="text-[#34A853]" />,
+      action: onOpenAssistantOverlay || onOpenAndroidTasks,
+      shortcut: 'Alt+S'
+    },
+    {
+      id: 'kokoro_voice',
+      title: 'Kokoro-82M Voice Engine Studio',
+      subtitle: 'Select on-device neural voices, speed, preview phonetics & cache model',
+      category: 'Engines',
+      icon: <Volume2 size={16} className="text-[#38bdf8]" />,
+      action: onOpenKokoroVoice || onOpenEngines,
+      shortcut: 'Alt+V'
     },
     {
       id: 'ceeza_dsp',

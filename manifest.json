@@ -1,14 +1,16 @@
 {
-  "name": "GOD AI Neural Interface",
+  "id": "/",
+  "name": "GOD AI Digital Assistant",
   "short_name": "GOD AI",
-  "description": "A futuristic, multimodal AI interface featuring Live Audio and deep Gemini integration.",
+  "description": "Mobile digital assistant application with Kokoro neural voice, Gemini vision lens, hands-free voice commands, and Android intent controls.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
   "orientation": "portrait",
   "background_color": "#000000",
   "theme_color": "#000000",
-  "categories": ["utilities", "productivity", "lifestyle"],
+  "categories": ["productivity", "utilities", "lifestyle"],
   "icons": [
     {
       "src": "https://img.freepik.com/free-photo/humanoid-robot-face-with-cyborg-concept_23-2150840249.jpg",
@@ -31,20 +33,50 @@
   ],
   "shortcuts": [
     {
-      "name": "Start Neural Link",
+      "name": "Talk to Digital Assistant",
+      "short_name": "Assistant",
+      "description": "Open GOD in Android Digital Assistant mode",
+      "url": "/?mode=assistant&action=voice",
+      "icons": [{ "src": "https://img.freepik.com/free-photo/humanoid-robot-face-with-cyborg-concept_23-2150840249.jpg", "sizes": "192x192" }]
+    },
+    {
+      "name": "Assistant Camera Lens",
+      "short_name": "Lens Vision",
+      "description": "Inspect real-world objects and text with camera",
+      "url": "/?mode=assistant&action=lens",
+      "icons": [{ "src": "https://img.freepik.com/free-photo/humanoid-robot-face-with-cyborg-concept_23-2150840249.jpg", "sizes": "192x192" }]
+    },
+    {
+      "name": "Live Vocal Link",
       "short_name": "Live Mode",
-      "description": "Open GOD in Live Vocal Interface mode",
+      "description": "Open GOD in bidirectional Live Vocal session",
       "url": "/?mode=live",
+      "icons": [{ "src": "https://img.freepik.com/free-photo/humanoid-robot-face-with-cyborg-concept_23-2150840249.jpg", "sizes": "192x192" }]
+    },
+    {
+      "name": "Android Tasks & Alarms",
+      "short_name": "Tasks/Timers",
+      "description": "Manage countdown alarms, reminders and Android intents",
+      "url": "/?mode=assistant&action=tasks",
       "icons": [{ "src": "https://img.freepik.com/free-photo/humanoid-robot-face-with-cyborg-concept_23-2150840249.jpg", "sizes": "192x192" }]
     }
   ],
+  "share_target": {
+    "action": "/?shared=true",
+    "method": "GET",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "url"
+    }
+  },
   "screenshots": [
     {
       "src": "https://img.freepik.com/free-photo/humanoid-robot-face-with-cyborg-concept_23-2150840249.jpg",
       "sizes": "1080x1920",
       "type": "image/jpeg",
       "form_factor": "narrow",
-      "label": "Neural Interface Initialized"
+      "label": "Neural Digital Assistant for Android"
     }
   ]
 }

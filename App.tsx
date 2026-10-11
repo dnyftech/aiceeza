@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Settings, Zap, RotateCcw, Moon, Sun, Play, X, Download, CheckCircle2, ArrowDown, Trash2, Mic, Cpu, Terminal, ShieldCheck, Activity, Layers, Radio, Sparkles, Volume2, VolumeX, Palette, Sliders, ArrowLeftRight, Check, BrainCircuit, Bookmark } from 'lucide-react';
+import { Settings, Zap, RotateCcw, Moon, Sun, Play, X, Download, CheckCircle2, ArrowDown, Trash2, Mic, Cpu, Terminal, ShieldCheck, Activity, Layers, Radio, Sparkles, Volume2, VolumeX, Palette, Sliders, ArrowLeftRight, Check, BrainCircuit, Bookmark, Keyboard, Command } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import InputBar from './components/InputBar';
 import ChatMessage from './components/ChatMessage';
@@ -18,13 +18,19 @@ import { WorkspaceManagerModal } from './components/WorkspaceManagerModal';
 import { EnginesDashboardModal } from './components/EnginesDashboardModal';
 import { DeviceAPIInspectorModal } from './components/DeviceAPIInspectorModal';
 import { CommandPaletteModal } from './components/CommandPaletteModal';
+import { KokoroVoiceModal } from './components/KokoroVoiceModal';
 import { Message, Sender, ModelMode, VoicePersonalityId, OrbTheme, UserProfile, AssistantTask, Artifact, Workspace, EngineConfig, EngineTelemetry } from './types';
 import { sendMessageToGemini, generateSpeech, connectLiveSession, transcribeAudio, VOICE_PERSONALITIES, AVAILABLE_VOICES, formatTextForExpressiveSpeech } from './services/geminiService';
+import { voiceEngine, VoiceEngineStatus, PreferredEngineSetting } from './services/voiceEngine';
+import { kokoroService } from './services/kokoroService';
 import { decodeAudioData } from './services/audio';
 import { triggerHaptic } from './utils/haptics';
 import { CeezaVoiceInputModal } from './components/CeezaVoiceInputModal';
 import { UserAccountModal } from './components/UserAccountModal';
 import { AndroidAssistantModal } from './components/AndroidAssistantModal';
+import { AndroidAssistantOverlay } from './components/AndroidAssistantOverlay';
+import { AssistantFloatingBubble } from './components/AssistantFloatingBubble';
+import { androidAssistantService } from './services/androidAssistantService';
 import { detectAndExecuteAndroidIntent, DEFAULT_TASKS } from './utils/androidIntents';
 import { DEFAULT_ARTIFACTS, DEFAULT_WORKSPACES, extractArtifactFromText } from './utils/artifactsExtractor';
 import { useDeviceCapabilities } from './utils/deviceDetector';
@@ -149,6 +155,7 @@ const App: React.FC = () => {
   const [isLive, setIsLive] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isBotSpeaking, setIsBotSpeaking] = useState(false);
+  const [voiceEngineStatus, setVoiceEngineStatus] = useState<VoiceEngineStatus>(() => voiceEngine.getStatus());
   const [isDarkMode, setIsDarkMode] = useState(true);
   const [lastLatencyMs, setLastLatencyMs] = useState<number | null>(null);
   const [hasStarted, setHasStarted] = useState<boolean>(() => {
@@ -157,6 +164,17 @@ const App: React.FC = () => {
   const [showSettings, setShowSettings] = useState(false);
   const [liveTranscription, setLiveTranscription] = useState<{ text: string; sender: 'user' | 'bot' } | null>(null);
   const [previewImageSrc, setPreviewImageSrc] = useState<string | null>(null);
+
+  // Sync Voice Engine status to isBotSpeaking
+  useEffect(() => {
+    const unsubscribe = voiceEngine.subscribe((st) => {
+      setVoiceEngineStatus(st);
+      if (!isLive) {
+        setIsBotSpeaking(st.isSpeaking);
+      }
+    });
+    return unsubscribe;
+  }, [isLive]);
 
   const followUpChips = useMemo(() => generateFollowUpChips(messages), [messages]);
 
@@ -307,6 +325,16 @@ const App: React.FC = () => {
   const [showAndroidModal, setShowAndroidModal] = useState(false);
   const [showCeezaVoiceModal, setShowCeezaVoiceModal] = useState(false);
   const [showSavedModal, setShowSavedModal] = useState(false);
+  const [showKokoroVoiceModal, setShowKokoroVoiceModal] = useState(false);
+  const [showAssistantOverlay, setShowAssistantOverlay] = useState(false);
+  const [showFloatingBubble, setShowFloatingBubble] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('god_ai_floating_bubble');
+      return saved !== null ? saved === 'true' : true;
+    } catch {
+      return true;
+    }
+  });
 
   const savedMessages = useMemo(() => messages.filter((m) => m.isSaved), [messages]);
   const savedCount = savedMessages.length;
@@ -404,6 +432,12 @@ const App: React.FC = () => {
       } else if (e.altKey && e.key.toLowerCase() === 'd') {
         e.preventDefault();
         setShowDeviceInspector((prev) => !prev);
+      } else if (e.altKey && e.key.toLowerCase() === 'v') {
+        e.preventDefault();
+        setShowKokoroVoiceModal((prev) => !prev);
+      } else if (e.altKey && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        setShowAssistantOverlay((prev) => !prev);
       }
     };
     window.addEventListener('keydown', handleGlobalShortcuts);
@@ -657,56 +691,21 @@ const App: React.FC = () => {
     setPreviewVoiceId(voiceName);
     triggerHaptic(20);
     try {
-      const audioBufferData = await generateSpeech(
-        "Voice preview operational. Trade intelligence system check.",
+      await voiceEngine.speak("Voice preview operational. Trade intelligence neural system check.", {
         personalityId,
-        voiceName
-      );
-      if (audioBufferData && outputAudioContextRef.current) {
-        const ctx = outputAudioContextRef.current;
-        if (ctx.state === 'suspended') await ctx.resume();
-        const decoded = await decodeAudioData(new Uint8Array(audioBufferData), ctx, 24000, 1);
-        const source = ctx.createBufferSource();
-        source.buffer = decoded;
-        source.connect(ctx.destination);
-        source.onended = () => {
+        customVoiceName: voiceName,
+        onEnd: () => {
           setIsPreviewLoading(false);
           setPreviewVoiceId(null);
-        };
-        source.start();
-      } else if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-        // Fallback to Web Speech API
-        const utterance = new SpeechSynthesisUtterance("Voice preview operational. Trade intelligence system check.");
-        utterance.onend = () => {
+        },
+        onError: () => {
           setIsPreviewLoading(false);
           setPreviewVoiceId(null);
-        };
-        utterance.onerror = () => {
-          setIsPreviewLoading(false);
-          setPreviewVoiceId(null);
-        };
-        window.speechSynthesis.speak(utterance);
-      } else {
-        setIsPreviewLoading(false);
-        setPreviewVoiceId(null);
-      }
-    } catch (err) {
-      console.warn("Voice preview error, attempting browser speech synthesis fallback:", err);
-      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-        const utterance = new SpeechSynthesisUtterance("Voice preview operational.");
-        utterance.onend = () => {
-          setIsPreviewLoading(false);
-          setPreviewVoiceId(null);
-        };
-        utterance.onerror = () => {
-          setIsPreviewLoading(false);
-          setPreviewVoiceId(null);
-        };
-        window.speechSynthesis.speak(utterance);
-      } else {
-        setIsPreviewLoading(false);
-        setPreviewVoiceId(null);
-      }
+        }
+      });
+    } catch {
+      setIsPreviewLoading(false);
+      setPreviewVoiceId(null);
     }
   };
 
@@ -807,6 +806,19 @@ const App: React.FC = () => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('mode') === 'live' && hasStarted && !isLive) {
       toggleLiveMode();
+    } else if (params.get('mode') === 'assistant') {
+      setShowAssistantOverlay(true);
+    }
+
+    // Android Web Share Target handler
+    const sharedText = params.get('text') || params.get('url') || params.get('title');
+    if (sharedText && params.get('shared') === 'true') {
+      setHasStarted(true);
+      setShowAssistantOverlay(true);
+      handleSendMessage(`Shared from Android: ${sharedText}`);
+      try {
+        window.history.replaceState({}, document.title, window.location.pathname);
+      } catch {}
     }
   }, [hasStarted]);
 
@@ -1112,74 +1124,20 @@ const App: React.FC = () => {
   };
 
   const playTTS = async (text: string, withEcho: boolean = false) => {
-    setIsBotSpeaking(true);
     try {
-      const audioBufferData = await generateSpeech(text, personalityId, customVoiceName);
-      if (audioBufferData && outputAudioContextRef.current) {
-        const ctx = outputAudioContextRef.current;
-        if (ctx.state === 'suspended') await ctx.resume();
-        
-        const audioBuffer = await decodeAudioData(
-            new Uint8Array(audioBufferData), 
-            ctx, 
-            24000
-        );
-
-        const source = ctx.createBufferSource();
-        source.buffer = audioBuffer;
-
-        source.onended = () => {
-          setIsBotSpeaking(false);
-        };
-
-        if (withEcho) {
-          const mainGain = ctx.createGain();
-          mainGain.gain.value = 0.8;
-          const delay = ctx.createDelay();
-          delay.delayTime.value = 0.25;
-          const feedback = ctx.createGain();
-          feedback.gain.value = 0.3;
-          const echoGain = ctx.createGain();
-          echoGain.gain.value = 0.4;
-
-          source.connect(mainGain);
-          mainGain.connect(ctx.destination);
-          source.connect(delay);
-          delay.connect(feedback);
-          feedback.connect(delay);
-          delay.connect(echoGain);
-          echoGain.connect(ctx.destination);
-        } else {
-          source.connect(ctx.destination);
-        }
-        
-        source.start();
-      } else if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-        // Fallback to browser Web Speech API with natural conversational cadence
-        const naturalSpoken = formatTextForExpressiveSpeech(text).replace(/\[[^\]]+\]/g, ', ');
-        const utterance = new SpeechSynthesisUtterance(naturalSpoken.slice(0, 450));
-        utterance.rate = 0.98; // Natural conversational tempo
-        utterance.pitch = 1.02; // Warm, dynamic tone
-        utterance.onend = () => setIsBotSpeaking(false);
-        utterance.onerror = () => setIsBotSpeaking(false);
-        window.speechSynthesis.speak(utterance);
-      } else {
-        setIsBotSpeaking(false);
-      }
+      await voiceEngine.speak(text, {
+        personalityId,
+        customVoiceName: customVoiceName || undefined,
+        withEcho,
+      });
     } catch (e) {
-      console.warn("playTTS error, attempting speech synthesis fallback:", e);
-      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-        const naturalSpoken = formatTextForExpressiveSpeech(text).replace(/\[[^\]]+\]/g, ', ');
-        const utterance = new SpeechSynthesisUtterance(naturalSpoken.slice(0, 450));
-        utterance.rate = 0.98;
-        utterance.pitch = 1.02;
-        utterance.onend = () => setIsBotSpeaking(false);
-        utterance.onerror = () => setIsBotSpeaking(false);
-        window.speechSynthesis.speak(utterance);
-      } else {
-        setIsBotSpeaking(false);
-      }
+      console.warn("playTTS voiceEngine error:", e);
     }
+  };
+
+  const stopTTS = () => {
+    triggerHaptic(15);
+    voiceEngine.stop();
   };
 
   const toggleLiveMode = async () => {
@@ -1325,6 +1283,24 @@ const App: React.FC = () => {
             <span className="hidden md:inline">Engines</span>
           </motion.button>
 
+          {/* Kokoro-82M Voice Engine Studio Trigger */}
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={() => {
+              triggerHaptic(15);
+              setShowKokoroVoiceModal(true);
+            }}
+            className="flex items-center gap-1.5 px-2.5 py-1 sm:py-1.5 rounded-full bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/40 text-cyan-300 text-[10px] font-mono font-bold transition-all flex-shrink-0"
+            title="Kokoro-82M Neural Voice Studio (Alt+V)"
+          >
+            <Volume2 size={13} />
+            <span className="hidden sm:inline">Kokoro</span>
+            <span className="text-[9px] px-1 py-0.2 rounded bg-cyan-500/25 text-cyan-200 uppercase font-mono font-bold">
+              82M
+            </span>
+          </motion.button>
+
           {/* Saved Intelligence / Bookmarks Trigger */}
           <motion.button
             whileHover={{ scale: 1.05 }}
@@ -1347,6 +1323,22 @@ const App: React.FC = () => {
                 {savedCount}
               </span>
             )}
+          </motion.button>
+
+          {/* Android Mobile Digital Assistant Trigger */}
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={() => {
+              triggerHaptic(20);
+              setShowAssistantOverlay(true);
+            }}
+            className="flex items-center gap-1.5 px-2.5 py-1 sm:py-1.5 rounded-full bg-[#34A853]/15 hover:bg-[#34A853]/25 border border-[#34A853]/40 text-[#34A853] text-[10px] font-mono uppercase tracking-wider font-bold transition-all flex-shrink-0 shadow-sm shadow-emerald-950/20"
+            title="Summon Mobile Digital Assistant (Alt+S)"
+          >
+            <Sparkles size={13} className="text-[#34A853] animate-pulse" />
+            <span className="hidden sm:inline">Assistant</span>
+            <span className="w-1.5 h-1.5 rounded-full bg-[#34A853]" />
           </motion.button>
 
           {/* Android Assistant Tasks Trigger */}
@@ -1686,6 +1678,136 @@ const App: React.FC = () => {
                   </div>
                 </div>
 
+                {/* Built-in Voice Engine Real-time Controls */}
+                <div className="p-4 rounded-2xl bg-[#131a28] border border-[#FAAD3F]/25 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-xs font-mono uppercase tracking-widest text-[#FAAD3F] font-bold flex items-center gap-1.5">
+                      <Volume2 size={14} className="text-[#FAAD3F]" />
+                      Voice Engines & Kokoro-82M
+                    </h3>
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-cyan-500/15 border border-cyan-500/30 text-cyan-300 font-bold uppercase">
+                      {voiceEngineStatus.currentEngine === 'kokoro'
+                        ? '🔥 Kokoro-82M Active'
+                        : voiceEngineStatus.currentEngine === 'neural_gemini'
+                        ? '⚡ Neural Gemini 3.8'
+                        : voiceEngineStatus.currentEngine === 'browser_speech'
+                        ? '🌐 Web Speech API'
+                        : `Default: ${voiceEngineStatus.preferredEngine.toUpperCase()}`}
+                    </span>
+                  </div>
+
+                  <p className="text-xs text-slate-300 leading-relaxed">
+                    Select your preferred speech engine or open the Kokoro Studio to configure 14+ on-device neural voices.
+                  </p>
+
+                  {/* Engine Quick Selector */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
+                    {[
+                      { id: 'kokoro', label: 'Kokoro 82M', sub: 'On-Device' },
+                      { id: 'gemini', label: 'Gemini 3.8', sub: 'Cloud High-Fi' },
+                      { id: 'browser', label: 'Web Speech', sub: 'Local Native' },
+                      { id: 'auto', label: 'Smart Auto', sub: 'Hierarchical' },
+                    ].map((eng) => (
+                      <button
+                        key={eng.id}
+                        onClick={() => {
+                          triggerHaptic(15);
+                          voiceEngine.setPreferredEngine(eng.id as PreferredEngineSetting);
+                        }}
+                        className={`p-2 rounded-xl border text-left transition-all text-xs font-mono ${
+                          voiceEngineStatus.preferredEngine === eng.id
+                            ? 'bg-cyan-500/20 border-cyan-400 text-cyan-200 font-bold shadow-sm'
+                            : 'bg-black/30 border-white/10 text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        <div className="font-bold">{eng.label}</div>
+                        <div className="text-[10px] text-slate-500">{eng.sub}</div>
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Open Kokoro Studio Button */}
+                  <button
+                    onClick={() => {
+                      triggerHaptic(15);
+                      setShowSettings(false);
+                      setShowKokoroVoiceModal(true);
+                    }}
+                    className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-cyan-600/30 to-blue-600/30 hover:from-cyan-600/40 hover:to-blue-600/40 text-cyan-200 border border-cyan-500/40 font-bold text-xs uppercase font-mono tracking-wider flex items-center justify-center gap-2 transition-all shadow-lg shadow-cyan-950/30"
+                  >
+                    <Volume2 size={15} />
+                    Open Kokoro-82M Voice Studio (Alt+V)
+                  </button>
+
+                  <div className="space-y-3 pt-2 border-t border-white/5">
+                    {/* Volume slider */}
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-xs font-mono text-slate-300">
+                        <span>Output Volume</span>
+                        <span className="text-[#FAAD3F] font-bold">{Math.round(voiceEngineStatus.volume * 100)}%</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0"
+                        max="1"
+                        step="0.05"
+                        value={voiceEngineStatus.volume}
+                        onChange={(e) => voiceEngine.setVolume(parseFloat(e.target.value))}
+                        className="w-full accent-[#FAAD3F] cursor-pointer"
+                      />
+                    </div>
+
+                    {/* Speech rate slider */}
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-xs font-mono text-slate-300">
+                        <span>Speech Rate</span>
+                        <span className="text-[#FAAD3F] font-bold">{voiceEngineStatus.rate.toFixed(2)}x</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0.6"
+                        max="1.6"
+                        step="0.05"
+                        value={voiceEngineStatus.rate}
+                        onChange={(e) => voiceEngine.setRate(parseFloat(e.target.value))}
+                        className="w-full accent-[#FAAD3F] cursor-pointer"
+                      />
+                    </div>
+
+                    {/* Pitch slider */}
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-xs font-mono text-slate-300">
+                        <span>Pitch Modulation</span>
+                        <span className="text-[#FAAD3F] font-bold">{voiceEngineStatus.pitch.toFixed(2)}x</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0.7"
+                        max="1.4"
+                        step="0.05"
+                        value={voiceEngineStatus.pitch}
+                        onChange={(e) => voiceEngine.setPitch(parseFloat(e.target.value))}
+                        className="w-full accent-[#FAAD3F] cursor-pointer"
+                      />
+                    </div>
+                  </div>
+
+                  {voiceEngineStatus.isSpeaking && (
+                    <div className="flex items-center justify-between p-2 rounded-xl bg-orange-500/10 border border-orange-500/20 text-xs font-mono text-orange-300">
+                      <span className="flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-orange-400 animate-ping" />
+                        Speaking: {voiceEngineStatus.activeVoice}
+                      </span>
+                      <button
+                        onClick={stopTTS}
+                        className="px-2 py-0.5 rounded bg-orange-500/20 hover:bg-orange-500/30 text-orange-200 font-bold cursor-pointer"
+                      >
+                        Stop
+                      </button>
+                    </div>
+                  )}
+                </div>
+
                 <div className="p-4 rounded-2xl bg-[#131a28] border border-[#F38020]/20">
                   <h3 className="text-xs font-mono uppercase tracking-widest text-[#FAAD3F] mb-2 font-bold">Local Conversation Storage</h3>
                   <p className="text-sm text-slate-300 leading-relaxed mb-3">
@@ -1754,6 +1876,104 @@ const App: React.FC = () => {
                   >
                     {isWakeWordEnabled ? 'ON' : 'OFF'}
                   </button>
+                </div>
+
+                {/* Android Mobile Digital Assistant & Floating Bubble */}
+                <div className="p-4 rounded-2xl bg-[#131a28] border border-[#34A853]/30 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-xs font-mono uppercase tracking-widest text-[#34A853] font-bold mb-1 flex items-center gap-1.5">
+                        <Smartphone size={14} className="text-[#34A853]" />
+                        Mobile Digital Assistant (Ella / Gemini)
+                      </h3>
+                      <p className="text-xs text-slate-300 leading-relaxed">
+                        Slide-up assistant drawer with Vision Lens, countdown alarms, flashlight torch & voice intents.
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => {
+                        triggerHaptic(15);
+                        setShowSettings(false);
+                        setShowAssistantOverlay(true);
+                      }}
+                      className="ml-3 px-3 py-1.5 rounded-xl bg-[#34A853]/20 border border-[#34A853]/50 text-[#34A853] font-mono text-xs font-bold uppercase transition-all shrink-0 hover:bg-[#34A853]/30"
+                    >
+                      Summon
+                    </button>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-2 border-t border-white/5">
+                    <span className="text-xs text-slate-300 font-mono">Floating Screen Bubble Widget</span>
+                    <button
+                      onClick={() => {
+                        triggerHaptic(15);
+                        const next = !showFloatingBubble;
+                        setShowFloatingBubble(next);
+                        try {
+                          localStorage.setItem('god_ai_floating_bubble', String(next));
+                        } catch {}
+                      }}
+                      className={`px-3 py-1.5 rounded-xl font-mono text-xs font-bold uppercase transition-all border shrink-0 ${
+                        showFloatingBubble
+                          ? 'bg-[#34A853]/20 border-[#34A853] text-[#34A853]'
+                          : 'bg-slate-800 border-white/10 text-slate-400'
+                      }`}
+                    >
+                      {showFloatingBubble ? 'ENABLED' : 'DISABLED'}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Keyboard Shortcuts Section */}
+                <div className="p-4 rounded-2xl bg-[#131a28] border border-[#FAAD3F]/25 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-xs font-mono uppercase tracking-widest text-[#FAAD3F] font-bold flex items-center gap-1.5">
+                      <Keyboard size={14} className="text-[#FAAD3F]" />
+                      Keyboard Shortcuts
+                    </h3>
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-white/5 border border-white/10 text-slate-400">
+                      Desktop / Web
+                    </span>
+                  </div>
+
+                  <p className="text-xs text-slate-300 leading-relaxed">
+                    Instant hotkeys to access system engines, sandboxes, and commands:
+                  </p>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs font-mono">
+                    <div className="flex items-center justify-between p-2 rounded-xl bg-black/40 border border-white/5">
+                      <span className="text-slate-300">Command Palette</span>
+                      <kbd className="px-2 py-0.5 rounded bg-white/10 text-[#FAAD3F] border border-white/10 font-bold">⌘K / Ctrl+K</kbd>
+                    </div>
+                    <div className="flex items-center justify-between p-2 rounded-xl bg-black/40 border border-[#34A853]/30">
+                      <span className="text-[#34A853]">Digital Assistant</span>
+                      <kbd className="px-2 py-0.5 rounded bg-[#34A853]/20 text-[#34A853] border border-[#34A853]/40 font-bold">Alt + S</kbd>
+                    </div>
+                    <div className="flex items-center justify-between p-2 rounded-xl bg-black/40 border border-white/5">
+                      <span className="text-slate-300">Artifacts Workbench</span>
+                      <kbd className="px-2 py-0.5 rounded bg-white/10 text-[#FAAD3F] border border-white/10 font-bold">Alt + A</kbd>
+                    </div>
+                    <div className="flex items-center justify-between p-2 rounded-xl bg-black/40 border border-white/5">
+                      <span className="text-slate-300">Workspaces Manager</span>
+                      <kbd className="px-2 py-0.5 rounded bg-white/10 text-[#FAAD3F] border border-white/10 font-bold">Alt + W</kbd>
+                    </div>
+                    <div className="flex items-center justify-between p-2 rounded-xl bg-black/40 border border-white/5">
+                      <span className="text-slate-300">Engines & Telemetry</span>
+                      <kbd className="px-2 py-0.5 rounded bg-white/10 text-[#FAAD3F] border border-white/10 font-bold">Alt + E</kbd>
+                    </div>
+                    <div className="flex items-center justify-between p-2 rounded-xl bg-black/40 border border-white/5">
+                      <span className="text-slate-300">Device API Inspector</span>
+                      <kbd className="px-2 py-0.5 rounded bg-white/10 text-[#FAAD3F] border border-white/10 font-bold">Alt + D</kbd>
+                    </div>
+                    <div className="flex items-center justify-between p-2 rounded-xl bg-black/40 border border-cyan-500/20">
+                      <span className="text-cyan-200">Kokoro Voice Studio</span>
+                      <kbd className="px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 font-bold">Alt + V</kbd>
+                    </div>
+                    <div className="flex items-center justify-between p-2 rounded-xl bg-black/40 border border-white/5">
+                      <span className="text-slate-300">Thinking Mode</span>
+                      <kbd className="px-2 py-0.5 rounded bg-white/10 text-[#FAAD3F] border border-white/10 font-bold">Swipe Right</kbd>
+                    </div>
+                  </div>
                 </div>
 
                 <div className="flex items-center justify-between p-4 rounded-2xl bg-[#131a28] border border-[#F38020]/20">
@@ -1832,6 +2052,8 @@ const App: React.FC = () => {
                       onRate={handleRateMessage} 
                       onImageClick={(src) => setPreviewImageSrc(src)}
                       onPlayTTS={(text) => playTTS(text)}
+                      onStopTTS={stopTTS}
+                      isSpeaking={voiceEngineStatus.isSpeaking && voiceEngineStatus.currentText === msg.text}
                       onReact={handleReactMessage}
                       onToggleSave={handleToggleSaveMessage}
                       onOpenInArtifacts={(codeText) => handleOpenInArtifacts(codeText)}
@@ -2012,10 +2234,39 @@ const App: React.FC = () => {
         onOpenAndroidTasks={() => setShowAndroidModal(true)}
         onOpenLiveVoice={toggleLiveMode}
         onOpenCeezaVoice={() => setShowCeezaVoiceModal(true)}
+        onOpenKokoroVoice={() => setShowKokoroVoiceModal(true)}
+        onOpenAssistantOverlay={() => setShowAssistantOverlay(true)}
         onToggleThinking={toggleThinking}
         onToggleSearchGrounding={toggleSearchGrounding}
         onClearChat={clearChat}
       />
+
+      {/* Kokoro-82M On-Device Neural Voice Studio Modal */}
+      <KokoroVoiceModal
+        isOpen={showKokoroVoiceModal}
+        onClose={() => setShowKokoroVoiceModal(false)}
+      />
+
+      {/* Android Mobile Digital Assistant Overlay (Ella / Gemini Style) */}
+      <AndroidAssistantOverlay
+        isOpen={showAssistantOverlay}
+        onClose={() => setShowAssistantOverlay(false)}
+        onOpenLiveVoice={toggleLiveMode}
+        onMinimizeToBubble={() => {
+          setShowAssistantOverlay(false);
+          setShowFloatingBubble(true);
+        }}
+      />
+
+      {/* Persistent Floating Assistant Bubble for Mobile Devices */}
+      {showFloatingBubble && (
+        <AssistantFloatingBubble
+          isOpen={showAssistantOverlay}
+          onOpenAssistant={() => setShowAssistantOverlay(true)}
+          isListening={false}
+          isSpeaking={voiceEngineStatus.isSpeaking}
+        />
+      )}
     </div>
   );
 };
