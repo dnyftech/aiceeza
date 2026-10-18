@@ -97,6 +97,14 @@ export interface AssistantTask {
 // --- Artifacts System Types ---
 export type ArtifactType = 'code' | 'markdown' | 'svg' | 'table' | 'interactive';
 
+export interface ArtifactVersionRecord {
+  version: number;
+  timestamp: string;
+  summary: string;
+  size: number;
+  loc?: number;
+}
+
 export interface Artifact {
   id: string;
   title: string;
@@ -109,6 +117,9 @@ export interface Artifact {
   workspaceId: string;
   version: number;
   tags?: string[];
+  parentId?: string;
+  dependencies?: string[];
+  versionHistory?: ArtifactVersionRecord[];
 }
 
 // --- Workspace Suite Types ---

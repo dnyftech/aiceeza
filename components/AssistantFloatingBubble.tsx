@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { motion } from 'framer-motion';
-import { Sparkles, Mic, Zap } from 'lucide-react';
+import { Sparkles, Mic, Volume2, X } from 'lucide-react';
 import { triggerHaptic } from '../utils/haptics';
 
 interface AssistantFloatingBubbleProps {
@@ -16,47 +16,57 @@ export const AssistantFloatingBubble: React.FC<AssistantFloatingBubbleProps> = (
   isListening = false,
   isSpeaking = false,
 }) => {
-  // If overlay is already open, hide floating bubble
   if (isOpen) return null;
 
   return (
     <motion.div
+      initial={{ scale: 0, opacity: 0, y: 30 }}
+      animate={{ scale: 1, opacity: 1, y: 0 }}
+      exit={{ scale: 0, opacity: 0 }}
       drag
-      dragConstraints={{ left: -300, right: 300, top: -500, bottom: 200 }}
-      whileHover={{ scale: 1.1 }}
-      whileTap={{ scale: 0.9 }}
+      dragConstraints={{ left: -300, right: 300, top: -400, bottom: 200 }}
+      whileHover={{ scale: 1.08 }}
+      whileTap={{ scale: 0.94 }}
       onClick={() => {
-        triggerHaptic(25);
+        triggerHaptic(20);
         onOpenAssistant();
       }}
-      className="fixed bottom-24 right-4 z-[70] cursor-pointer touch-none select-none"
-      title="Tap to summon Android Digital Assistant (Gemini / Ella Core)"
+      className="fixed bottom-24 right-5 z-50 cursor-pointer touch-none select-none"
+      title="Tap to launch GOD AI Android Assistant"
     >
-      <div className="relative flex items-center justify-center">
-        {/* Pulsating outer aura */}
-        <motion.div
-          animate={{
-            scale: isListening ? [1, 1.4, 1] : isSpeaking ? [1, 1.3, 1] : [1, 1.15, 1],
-            opacity: isListening ? [0.6, 0.9, 0.6] : [0.3, 0.6, 0.3],
-          }}
-          transition={{ repeat: Infinity, duration: isListening ? 1.2 : 2.5 }}
-          className="w-14 h-14 rounded-full bg-gradient-to-tr from-[#4285F4] via-[#34A853] to-[#FAAD3F] blur-md absolute"
+      <div className="relative group">
+        {/* Glow rings */}
+        <div
+          className={`absolute -inset-2 rounded-full blur-md opacity-70 transition-all duration-300 ${
+            isSpeaking
+              ? 'bg-[#FAAD3F] animate-ping opacity-90'
+              : isListening
+              ? 'bg-[#34A853] animate-pulse opacity-90'
+              : 'bg-gradient-to-r from-[#FAAD3F] to-[#34A853] opacity-60 group-hover:opacity-100'
+          }`}
         />
 
-        {/* Bubble Core */}
-        <div className="w-13 h-13 rounded-full bg-black/90 border-2 border-[#34A853] shadow-2xl shadow-emerald-500/30 flex items-center justify-center relative z-10 backdrop-blur-md">
-          {isListening ? (
-            <Mic size={22} className="text-red-400 animate-pulse" />
-          ) : isSpeaking ? (
-            <Zap size={22} className="text-[#FAAD3F] animate-bounce" />
-          ) : (
-            <Sparkles size={22} className="text-[#34A853]" />
-          )}
+        {/* Bubble sphere */}
+        <div className="relative w-14 h-14 rounded-full bg-slate-950/90 border border-amber-400/50 shadow-[0_10px_25px_rgba(0,0,0,0.6)] backdrop-blur-xl flex flex-col items-center justify-center overflow-hidden">
+          {/* Animated radar sweep */}
+          <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-amber-500/10 to-transparent animate-spin duration-1000" />
 
-          {/* Miniature Android Assistant Badge */}
-          <div className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-[#34A853] text-black text-[9px] font-bold flex items-center justify-center shadow">
-            AI
-          </div>
+          {isSpeaking ? (
+            <div className="flex items-center gap-0.5">
+              <span className="w-1 h-3 bg-[#FAAD3F] rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+              <span className="w-1 h-5 bg-[#FAAD3F] rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+              <span className="w-1 h-2 bg-[#FAAD3F] rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+            </div>
+          ) : isListening ? (
+            <Mic size={22} className="text-[#34A853] animate-pulse" />
+          ) : (
+            <div className="flex flex-col items-center">
+              <Sparkles size={20} className="text-[#FAAD3F]" />
+              <span className="text-[8px] font-mono font-black text-amber-300 uppercase tracking-tighter">
+                GOD
+              </span>
+            </div>
+          )}
         </div>
       </div>
     </motion.div>

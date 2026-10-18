@@ -250,44 +250,34 @@ export const generateSpeech = async (
     const speechFormattedText = formatTextForExpressiveSpeech(text);
     const prompt = `${personality.ttsPromptPrefix} "${speechFormattedText}"`;
     
-    let response;
-    try {
-      response = await ai.models.generateContent({
-        model: "gemini-3.8-flash-lite-tts",
-        contents: [
-          {
-            role: "user",
-            parts: [{ text: prompt }],
-          },
-        ],
-        config: {
-          responseModalities: [Modality.AUDIO],
-          speechConfig: {
-            voiceConfig: {
-              prebuiltVoiceConfig: { voiceName: selectedVoice },
+    let response: any = null;
+    const modelsToTry = ["gemini-3.8-flash-lite-tts", "gemini-3.8-flash-tts"];
+
+    for (const model of modelsToTry) {
+      try {
+        response = await ai.models.generateContent({
+          model,
+          contents: [
+            {
+              role: "user",
+              parts: [{ text: prompt }],
+            },
+          ],
+          config: {
+            responseModalities: [Modality.AUDIO],
+            speechConfig: {
+              voiceConfig: {
+                prebuiltVoiceConfig: { voiceName: selectedVoice },
+              },
             },
           },
-        },
-      });
-    } catch (primaryErr) {
-      console.warn("gemini-3.8-flash-lite-tts error, attempting fallback with gemini-3.8-flash-tts:", primaryErr);
-      response = await ai.models.generateContent({
-        model: "gemini-3.8-flash-tts",
-        contents: [
-          {
-            role: "user",
-            parts: [{ text: prompt }],
-          },
-        ],
-        config: {
-          responseModalities: [Modality.AUDIO],
-          speechConfig: {
-            voiceConfig: {
-              prebuiltVoiceConfig: { voiceName: selectedVoice },
-            },
-          },
-        },
-      });
+        });
+        if (response?.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data) {
+          break; // successfully generated audio
+        }
+      } catch (err: any) {
+        console.warn(`TTS attempt with ${model} encountered transient notice, falling back smoothly:`, err?.message || err);
+      }
     }
 
     const base64Audio = response?.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
@@ -301,8 +291,8 @@ export const generateSpeech = async (
       return bytes.buffer;
     }
     return null;
-  } catch (e) {
-    console.error("TTS Error:", e);
+  } catch (e: any) {
+    console.warn("TTS fallback notice:", e?.message || e);
     return null;
   }
 };

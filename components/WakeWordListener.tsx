@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Mic, MicOff, Sparkles, Volume2 } from 'lucide-react';
 import { triggerHaptic } from '../utils/haptics';
+import { voiceEngine } from '../services/voiceEngine';
 
 interface WakeWordListenerProps {
   onWakeWordTriggered: () => void;
@@ -72,6 +73,9 @@ export const WakeWordListener: React.FC<WakeWordListenerProps> = ({
         for (let i = event.resultIndex; i < event.results.length; ++i) {
           const transcript = event.results[i][0].transcript.toLowerCase().trim();
           
+          // If user starts speaking while TTS is playing, interrupt speech playback immediately
+          voiceEngine.notifyMicrophoneActivity();
+
           // Trigger phrases
           if (
             transcript.includes('hey god') || 
@@ -80,6 +84,8 @@ export const WakeWordListener: React.FC<WakeWordListenerProps> = ({
             transcript.includes('activate live') ||
             transcript.includes('god listen')
           ) {
+            // Immediately interrupt active speech playback
+            voiceEngine.notifyWakeWord(transcript);
             triggerHaptic([40, 80, 40]);
             setDetectedToast(`Wake word detected: "${transcript}"`);
             

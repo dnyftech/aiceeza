@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Settings, Zap, RotateCcw, Moon, Sun, Play, X, Download, CheckCircle2, ArrowDown, Trash2, Mic, Cpu, Terminal, ShieldCheck, Activity, Layers, Radio, Sparkles, Volume2, VolumeX, Palette, Sliders, ArrowLeftRight, Check, BrainCircuit, Bookmark, Keyboard, Command } from 'lucide-react';
+import { Settings, Zap, RotateCcw, Moon, Sun, Play, X, Download, CheckCircle2, ArrowDown, Trash2, Mic, Cpu, Terminal, ShieldCheck, Activity, Layers, Radio, Sparkles, Volume2, VolumeX, Palette, Sliders, ArrowLeftRight, Check, BrainCircuit, Bookmark, Keyboard, Command, Bell } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import InputBar from './components/InputBar';
 import ChatMessage from './components/ChatMessage';
@@ -355,13 +355,25 @@ const App: React.FC = () => {
     }
   }, [activeUserId]);
 
+  // Active Task Reminder Alert Banner State
+  const [activeReminderTask, setActiveReminderTask] = useState<AssistantTask | null>(null);
+
   useEffect(() => {
     try {
       localStorage.setItem('god_ai_assistant_tasks', JSON.stringify(assistantTasks));
     } catch (e) {
       console.error('Failed to save assistant tasks:', e);
     }
+    // Register tasks for background deadline & reminder checks
+    androidAssistantService.registerTasksForMonitoring(assistantTasks);
   }, [assistantTasks]);
+
+  useEffect(() => {
+    const unsub = androidAssistantService.subscribeReminders((task) => {
+      setActiveReminderTask(task);
+    });
+    return unsub;
+  }, []);
 
   const handleCreateUser = (name: string, role: UserProfile['role']) => {
     const newUser: UserProfile = {
@@ -937,7 +949,7 @@ const App: React.FC = () => {
 
   const handleSendMessage = async (
     text: string, 
-    options: { mode: ModelMode; image?: File; enableSearchGrounding?: boolean }
+    options: { mode?: ModelMode; image?: File; enableSearchGrounding?: boolean } = {}
   ) => {
     setIsLoading(true);
     incrementUserQueryCount();
@@ -973,13 +985,14 @@ const App: React.FC = () => {
     const startTime = performance.now();
 
     try {
+      const targetMode = options.mode || mode;
       const enableSearch = options.enableSearchGrounding !== undefined 
         ? options.enableSearchGrounding 
         : isSearchGrounding;
 
       const response = await sendMessageToGemini({
         message: text,
-        mode: options.mode === ModelMode.Thinking ? ModelMode.Thinking : mode,
+        mode: targetMode === ModelMode.Thinking ? ModelMode.Thinking : targetMode,
         image: imageBase64,
         personalityId: personalityId,
         enableSearchGrounding: enableSearch
@@ -998,7 +1011,7 @@ const App: React.FC = () => {
         text: botText,
         sender: Sender.Bot,
         timestamp: new Date(),
-        isThinking: options.mode === ModelMode.Thinking,
+        isThinking: targetMode === ModelMode.Thinking,
         groundingMetadata: response.groundingMetadata
       };
 
@@ -1123,12 +1136,13 @@ const App: React.FC = () => {
     }, 150);
   };
 
-  const playTTS = async (text: string, withEcho: boolean = false) => {
+  const playTTS = async (text: string, withEcho: boolean = false, interruptible: boolean = true) => {
     try {
       await voiceEngine.speak(text, {
         personalityId,
         customVoiceName: customVoiceName || undefined,
         withEcho,
+        interruptible,
       });
     } catch (e) {
       console.warn("playTTS voiceEngine error:", e);
@@ -2179,6 +2193,7 @@ const App: React.FC = () => {
         isOpen={showArtifactsModal}
         onClose={() => setShowArtifactsModal(false)}
         artifacts={artifacts}
+        workspaces={workspaces}
         activeArtifactId={activeArtifactId}
         onSelectArtifact={(id) => setActiveArtifactId(id)}
         onSaveArtifact={handleSaveArtifact}
@@ -2267,6 +2282,92 @@ const App: React.FC = () => {
           isSpeaking={voiceEngineStatus.isSpeaking}
         />
       )}
+
+      {/* Active Task Reminder Notification Banner */}
+      <AnimatePresence>
+        {activeReminderTask && (
+          <motion.div
+            initial={{ opacity: 0, y: -40, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -40, scale: 0.95 }}
+            className="fixed top-5 left-1/2 -translate-x-1/2 z-[100] w-full max-w-lg px-4"
+          >
+            <div className="p-4 rounded-2xl bg-[#0b121e]/95 border-2 border-[#FAAD3F] shadow-[0_10px_40px_rgba(250,173,63,0.4)] backdrop-blur-xl text-white flex items-start justify-between gap-3">
+              <div className="flex items-start gap-3">
+                <div className="p-2.5 rounded-xl bg-[#FAAD3F]/20 text-[#FAAD3F] border border-[#FAAD3F]/40 animate-pulse mt-0.5">
+                  <Bell size={20} />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-mono font-bold uppercase tracking-widest text-[#FAAD3F]">
+                      Task Deadline Reached
+                    </span>
+                    <span className="text-[9px] font-mono px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 font-bold">
+                      Reminder
+                    </span>
+                  </div>
+                  <h4 className="font-bold text-sm text-white mt-0.5">
+                    {activeReminderTask.title}
+                  </h4>
+                  <p className="text-xs text-slate-300 mt-1 leading-relaxed">
+                    {activeReminderTask.details}
+                  </p>
+
+                  <div className="flex items-center gap-2 mt-3">
+                    <button
+                      onClick={() => {
+                        triggerHaptic(20);
+                        setAssistantTasks((prev) =>
+                          prev.map((t) => (t.id === activeReminderTask.id ? { ...t, completed: true } : t))
+                        );
+                        setActiveReminderTask(null);
+                      }}
+                      className="px-3 py-1.5 rounded-xl bg-[#34A853] hover:bg-[#2e9449] text-black font-mono font-bold text-xs flex items-center gap-1 shadow-md transition-colors"
+                    >
+                      <CheckCircle2 size={13} />
+                      <span>Mark Done</span>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        triggerHaptic(15);
+                        setAssistantTasks((prev) =>
+                          prev.map((t) =>
+                            t.id === activeReminderTask.id
+                              ? { ...t, scheduledTime: 'In 5 Minutes', completed: false }
+                              : t
+                          )
+                        );
+                        setActiveReminderTask(null);
+                      }}
+                      className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-slate-200 font-mono text-xs transition-colors"
+                    >
+                      Snooze (+5m)
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        triggerHaptic(10);
+                        setActiveReminderTask(null);
+                      }}
+                      className="px-2.5 py-1.5 rounded-xl text-slate-400 hover:text-white font-mono text-xs transition-colors"
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setActiveReminderTask(null)}
+                className="p-1 rounded-lg text-slate-400 hover:text-white transition-colors"
+              >
+                <X size={16} />
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

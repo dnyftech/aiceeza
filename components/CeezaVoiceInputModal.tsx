@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Mic, MicOff, Square, Send, X, Radio, Volume2, Sparkles, Activity, Check } from 'lucide-react';
 import { triggerHaptic } from '../utils/haptics';
+import { voiceEngine } from '../services/voiceEngine';
 
 interface CeezaVoiceInputModalProps {
   isOpen: boolean;
@@ -43,6 +44,9 @@ export const CeezaVoiceInputModal: React.FC<CeezaVoiceInputModalProps> = ({
 
   const startRecording = async () => {
     try {
+      // Immediately stop any ongoing audio playback in interruptible mode
+      voiceEngine.interrupt('user_mic_record');
+
       setAudioBlob(null);
       setAudioBase64(null);
       setRecordingTime(0);

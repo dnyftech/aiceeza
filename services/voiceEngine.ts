@@ -2,6 +2,7 @@ import { VoicePersonalityId } from '../types';
 import { VOICE_PERSONALITIES, AVAILABLE_VOICES, formatTextForExpressiveSpeech, generateSpeech } from './geminiService';
 import { decodeAudioData } from './audio';
 import { kokoroService } from './kokoroService';
+import { triggerHaptic } from '../utils/haptics';
 
 export type TTSEngineKind = 'kokoro' | 'neural_gemini' | 'browser_speech' | 'idle';
 export type PreferredEngineSetting = 'auto' | 'kokoro' | 'gemini' | 'browser';
@@ -9,6 +10,7 @@ export type PreferredEngineSetting = 'auto' | 'kokoro' | 'gemini' | 'browser';
 export interface VoiceEngineStatus {
   isSpeaking: boolean;
   isSynthesizing: boolean;
+  isInterruptible: boolean;
   currentEngine: TTSEngineKind;
   preferredEngine: PreferredEngineSetting;
   activeVoice: string;
@@ -16,6 +18,17 @@ export interface VoiceEngineStatus {
   rate: number;   // 0.5 - 2.0
   pitch: number;  // 0.5 - 2.0
   currentText: string | null;
+}
+
+export interface SpeakOptions {
+  personalityId?: VoicePersonalityId;
+  customVoiceName?: string;
+  withEcho?: boolean;
+  engineOverride?: 'kokoro' | 'gemini' | 'browser';
+  interruptible?: boolean;
+  onEnd?: () => void;
+  onInterrupted?: (reason?: string) => void;
+  onError?: (err: any) => void;
 }
 
 export type VoiceEngineListener = (status: VoiceEngineStatus) => void;
@@ -32,11 +45,18 @@ class BuiltInVoiceEngine {
   private rate: number = 1.0;
   private pitch: number = 1.0;
   private preferredEngine: PreferredEngineSetting = 'auto';
+  private interruptibleDefault: boolean = true;
+
+  // Active playback state
+  private activeInterruptible: boolean = false;
+  private currentOnInterrupted: ((reason?: string) => void) | null = null;
+  private currentOnEnd: (() => void) | null = null;
 
   // State
   private status: VoiceEngineStatus = {
     isSpeaking: false,
     isSynthesizing: false,
+    isInterruptible: true,
     currentEngine: 'idle',
     preferredEngine: 'auto',
     activeVoice: 'Zephyr',
@@ -48,6 +68,7 @@ class BuiltInVoiceEngine {
 
   constructor() {
     this.initFromStorage();
+    this.attachGlobalInterruptionListeners();
   }
 
   private initFromStorage() {
@@ -66,15 +87,38 @@ class BuiltInVoiceEngine {
       const savedPitch = localStorage.getItem('god_ai_tts_pitch');
       if (savedPitch) this.pitch = parseFloat(savedPitch);
 
+      const savedInterruptible = localStorage.getItem('god_ai_tts_interruptible');
+      if (savedInterruptible !== null) {
+        this.interruptibleDefault = savedInterruptible === 'true';
+      }
+
       this.updateStatus({
         preferredEngine: this.preferredEngine,
         volume: this.volume,
         rate: this.rate,
         pitch: this.pitch,
+        isInterruptible: this.interruptibleDefault,
       });
     } catch {
       // Ignore localStorage errors
     }
+  }
+
+  private attachGlobalInterruptionListeners() {
+    if (typeof window === 'undefined') return;
+
+    // Listen for custom wake-word / mic events
+    window.addEventListener('god_ai_mic_active', () => {
+      this.notifyMicrophoneActivity();
+    });
+
+    window.addEventListener('god_ai_wake_word', (e: any) => {
+      this.notifyWakeWord(e?.detail?.phrase);
+    });
+
+    window.addEventListener('voice-engine-interrupt', (e: any) => {
+      this.interrupt(e?.detail?.reason || 'event_interrupt');
+    });
   }
 
   public getAudioContext(): AudioContext {
@@ -128,6 +172,18 @@ class BuiltInVoiceEngine {
     this.updateStatus({ preferredEngine: engine });
   }
 
+  public setInterruptibleDefault(enabled: boolean) {
+    this.interruptibleDefault = enabled;
+    try {
+      localStorage.setItem('god_ai_tts_interruptible', enabled.toString());
+    } catch {}
+    this.updateStatus({ isInterruptible: enabled });
+  }
+
+  public isInterruptibleActive(): boolean {
+    return this.status.isSpeaking && this.activeInterruptible;
+  }
+
   public setVolume(val: number) {
     this.volume = Math.max(0, Math.min(1, val));
     if (this.currentGain) {
@@ -156,9 +212,61 @@ class BuiltInVoiceEngine {
   }
 
   /**
+   * Immediately stops audio playback when user microphone input or wake word is detected
+   */
+  public interrupt(reason: string = 'user_interruption'): boolean {
+    if (!this.status.isSpeaking && !this.status.isSynthesizing) {
+      return false;
+    }
+
+    if (!this.activeInterruptible) {
+      return false;
+    }
+
+    triggerHaptic(20);
+    const cb = this.currentOnInterrupted;
+    this.stop();
+
+    if (cb) {
+      try {
+        cb(reason);
+      } catch (e) {
+        console.error('Interrupt callback error:', e);
+      }
+    }
+    return true;
+  }
+
+  /**
+   * Called when microphone voice activity is detected while speech is playing.
+   */
+  public notifyMicrophoneActivity(level?: number): boolean {
+    if (this.isInterruptibleActive()) {
+      if (level === undefined || level > 12) {
+        return this.interrupt('microphone_input_detected');
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Called when hands-free wake word is detected ("Hey God", "OK God", etc.).
+   */
+  public notifyWakeWord(phrase?: string): boolean {
+    if (this.isInterruptibleActive() || this.status.isSpeaking) {
+      return this.interrupt(phrase ? `wake_word_${phrase}` : 'wake_word_detected');
+    }
+    return false;
+  }
+
+  /**
    * Stop any currently active speech playback immediately.
    */
   public stop() {
+    this.activeInterruptible = false;
+    this.currentOnInterrupted = null;
+    this.currentOnEnd = null;
+
     // 1. Stop Web Audio Buffer Source
     if (this.currentSource) {
       try {
@@ -187,23 +295,22 @@ class BuiltInVoiceEngine {
    * Main speech playback function:
    * Synthesizes and speaks text using either Kokoro-82M Neural Engine,
    * Gemini 3.8 Neural Flash TTS, or Browser SpeechSynthesis.
+   * Includes interruptible mode that immediately halts playback on mic input or wake word.
    */
   public async speak(
     text: string,
-    options?: {
-      personalityId?: VoicePersonalityId;
-      customVoiceName?: string;
-      withEcho?: boolean;
-      engineOverride?: 'kokoro' | 'gemini' | 'browser';
-      onEnd?: () => void;
-      onError?: (err: any) => void;
-    }
+    options?: SpeakOptions
   ): Promise<boolean> {
     const cleanText = text.trim();
     if (!cleanText) return false;
 
     // Stop any ongoing playback
     this.stop();
+
+    const isInterruptible = options?.interruptible !== undefined ? options.interruptible : this.interruptibleDefault;
+    this.activeInterruptible = isInterruptible;
+    this.currentOnInterrupted = options?.onInterrupted || null;
+    this.currentOnEnd = options?.onEnd || null;
 
     const targetEngine = options?.engineOverride || this.preferredEngine;
     const personalityId = options?.personalityId || 'ceeza';
@@ -213,6 +320,7 @@ class BuiltInVoiceEngine {
     this.updateStatus({
       isSpeaking: true,
       isSynthesizing: true,
+      isInterruptible,
       activeVoice: selectedVoice,
       currentText: cleanText,
     });
@@ -228,6 +336,11 @@ class BuiltInVoiceEngine {
           kokoroVoice, 
           this.rate
         );
+
+        if (!this.status.isSpeaking) {
+          // Playback was cancelled or interrupted during synthesis
+          return false;
+        }
 
         this.updateStatus({
           isSynthesizing: false,
@@ -246,7 +359,7 @@ class BuiltInVoiceEngine {
 
         const source = ctx.createBufferSource();
         source.buffer = audioBuffer;
-        source.playbackRate.value = 1.0; // speed handled by Kokoro synthesizer
+        source.playbackRate.value = 1.0;
 
         const gainNode = ctx.createGain();
         gainNode.gain.value = this.volume;
@@ -281,6 +394,7 @@ class BuiltInVoiceEngine {
 
         source.onended = () => {
           this.currentSource = null;
+          this.activeInterruptible = false;
           this.updateStatus({
             isSpeaking: false,
             currentEngine: 'idle',
@@ -294,7 +408,6 @@ class BuiltInVoiceEngine {
       } catch (kokoroErr) {
         console.warn('Kokoro Voice Engine failed or aborted, falling back:', kokoroErr);
         if (targetEngine === 'kokoro') {
-          // If explicitly selected, report error but fallback cleanly
           options?.onError?.(kokoroErr);
         }
       }
@@ -304,6 +417,11 @@ class BuiltInVoiceEngine {
     if (targetEngine !== 'browser') {
       try {
         const audioBufferData = await generateSpeech(cleanText, personalityId, selectedVoice);
+
+        if (!this.status.isSpeaking) {
+          // Playback was cancelled or interrupted during synthesis
+          return false;
+        }
 
         if (audioBufferData) {
           this.updateStatus({
@@ -323,6 +441,8 @@ class BuiltInVoiceEngine {
             24000,
             1
           );
+
+          if (!this.status.isSpeaking) return false;
 
           const source = ctx.createBufferSource();
           source.buffer = decodedBuffer;
@@ -361,6 +481,7 @@ class BuiltInVoiceEngine {
 
           source.onended = () => {
             this.currentSource = null;
+            this.activeInterruptible = false;
             this.updateStatus({
               isSpeaking: false,
               currentEngine: 'idle',
@@ -373,9 +494,11 @@ class BuiltInVoiceEngine {
           return true;
         }
       } catch (neuralErr) {
-        console.warn('Gemini Neural Voice synthesis fallback to Browser Speech Engine:', neuralErr);
+        console.warn('Gemini Neural Voice synthesis notice, falling back to Browser Speech Engine:', neuralErr);
       }
     }
+
+    if (!this.status.isSpeaking) return false;
 
     // 3. Fallback to Browser Built-in Web Speech API Engine
     return this.speakWithBrowserEngine(cleanText, selectedVoice, options);
@@ -387,12 +510,10 @@ class BuiltInVoiceEngine {
   private speakWithBrowserEngine(
     text: string,
     voiceName: string,
-    options?: {
-      onEnd?: () => void;
-      onError?: (err: any) => void;
-    }
+    options?: SpeakOptions
   ): boolean {
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
+      this.activeInterruptible = false;
       this.updateStatus({
         isSpeaking: false,
         isSynthesizing: false,
@@ -435,6 +556,7 @@ class BuiltInVoiceEngine {
       });
 
       utterance.onend = () => {
+        this.activeInterruptible = false;
         this.updateStatus({
           isSpeaking: false,
           currentEngine: 'idle',
@@ -444,6 +566,7 @@ class BuiltInVoiceEngine {
       };
 
       utterance.onerror = (err) => {
+        this.activeInterruptible = false;
         this.updateStatus({
           isSpeaking: false,
           currentEngine: 'idle',
@@ -455,6 +578,7 @@ class BuiltInVoiceEngine {
       window.speechSynthesis.speak(utterance);
       return true;
     } catch (err) {
+      this.activeInterruptible = false;
       this.updateStatus({
         isSpeaking: false,
         isSynthesizing: false,

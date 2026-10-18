@@ -24,15 +24,20 @@ import {
   X,
   FileCode,
   Eye,
-  GitBranch
+  GitBranch,
+  Network,
+  TrendingUp
 } from 'lucide-react';
-import { Artifact, ArtifactType } from '../types';
+import { Artifact, ArtifactType, Workspace } from '../types';
 import { triggerHaptic } from '../utils/haptics';
+import { D3ArtifactsGraph } from './D3ArtifactsGraph';
+import { D3ArtifactsScatterPlot } from './D3ArtifactsScatterPlot';
 
 interface ArtifactsWorkbenchProps {
   isOpen: boolean;
   onClose: () => void;
   artifacts: Artifact[];
+  workspaces?: Workspace[];
   activeArtifactId?: string | null;
   onSelectArtifact: (id: string) => void;
   onSaveArtifact: (artifact: Artifact) => void;
@@ -45,6 +50,7 @@ export const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
   isOpen,
   onClose,
   artifacts,
+  workspaces = [],
   activeArtifactId,
   onSelectArtifact,
   onSaveArtifact,
@@ -52,7 +58,7 @@ export const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
   onCreateArtifact,
   workspaceName = 'Primary Command',
 }) => {
-  const [activeTab, setActiveTab] = useState<'code' | 'preview'>('preview');
+  const [activeTab, setActiveTab] = useState<'code' | 'preview' | 'graph' | 'scatter'>('preview');
   const [simulatedDevice, setSimulatedDevice] = useState<'desktop' | 'tablet' | 'mobile'>('desktop');
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState('');
@@ -250,6 +256,38 @@ export const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
             <button
               onClick={() => {
                 triggerHaptic(15);
+                setActiveTab(activeTab === 'graph' ? 'preview' : 'graph');
+              }}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-mono transition-all border ${
+                activeTab === 'graph'
+                  ? 'bg-[#38bdf8] text-black border-[#38bdf8] font-bold shadow-md'
+                  : 'bg-white/5 border-white/10 text-slate-300 hover:text-white hover:bg-white/10'
+              }`}
+              title="Toggle D3 Relationship Graph"
+            >
+              <Network size={14} />
+              <span className="hidden sm:inline">{activeTab === 'graph' ? 'Back to Sandbox' : 'Project Graph'}</span>
+            </button>
+
+            <button
+              onClick={() => {
+                triggerHaptic(15);
+                setActiveTab(activeTab === 'scatter' ? 'preview' : 'scatter');
+              }}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-mono transition-all border ${
+                activeTab === 'scatter'
+                  ? 'bg-[#FAAD3F] text-black border-[#FAAD3F] font-bold shadow-md'
+                  : 'bg-white/5 border-white/10 text-slate-300 hover:text-white hover:bg-white/10'
+              }`}
+              title="Toggle D3 Evolution Scatter Plot"
+            >
+              <TrendingUp size={14} />
+              <span className="hidden sm:inline">{activeTab === 'scatter' ? 'Back to Sandbox' : 'Evolution Matrix'}</span>
+            </button>
+
+            <button
+              onClick={() => {
+                triggerHaptic(15);
                 setShowCreateModal(true);
               }}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#FAAD3F] text-black font-bold text-xs font-mono transition-all hover:brightness-110 cursor-pointer shadow-md"
@@ -381,6 +419,36 @@ export const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
                     <Code2 size={13} />
                     <span>Source Code</span>
                   </button>
+
+                  <button
+                    onClick={() => {
+                      triggerHaptic(10);
+                      setActiveTab('graph');
+                    }}
+                    className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-mono transition-all ${
+                      activeTab === 'graph'
+                        ? 'bg-[#38bdf8] text-black font-bold shadow-sm'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    <Network size={13} />
+                    <span>Project Graph</span>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      triggerHaptic(10);
+                      setActiveTab('scatter');
+                    }}
+                    className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-mono transition-all ${
+                      activeTab === 'scatter'
+                        ? 'bg-[#FAAD3F] text-black font-bold shadow-sm'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    <TrendingUp size={13} />
+                    <span>Evolution Scatter</span>
+                  </button>
                 </div>
 
                 {/* Device Viewport Emulator Controls (when in Live Preview) */}
@@ -477,7 +545,42 @@ export const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
 
               {/* Canvas Content Area */}
               <div className="flex-1 min-h-0 relative p-3 sm:p-4 overflow-auto bg-[#03060f] flex items-center justify-center">
-                {activeTab === 'preview' ? (
+                {activeTab === 'graph' ? (
+                  <div className="w-full h-full rounded-2xl overflow-hidden border border-white/10 shadow-2xl bg-[#050811]">
+                    <D3ArtifactsGraph
+                      artifacts={artifacts}
+                      workspaces={workspaces}
+                      activeArtifactId={currentArtifact?.id}
+                      onSelectArtifact={onSelectArtifact}
+                      onOpenSandbox={(id) => {
+                        onSelectArtifact(id);
+                        setActiveTab('preview');
+                      }}
+                      onOpenCode={(id) => {
+                        onSelectArtifact(id);
+                        setActiveTab('code');
+                      }}
+                    />
+                  </div>
+                ) : activeTab === 'scatter' ? (
+                  <div className="w-full h-full rounded-2xl overflow-hidden border border-white/10 shadow-2xl bg-[#050811]">
+                    <D3ArtifactsScatterPlot
+                      artifacts={artifacts}
+                      workspaces={workspaces}
+                      activeArtifactId={currentArtifact?.id}
+                      onSelectArtifact={onSelectArtifact}
+                      onOpenSandbox={(id) => {
+                        onSelectArtifact(id);
+                        setActiveTab('preview');
+                      }}
+                      onOpenCode={(id) => {
+                        onSelectArtifact(id);
+                        setActiveTab('code');
+                      }}
+                      onSaveArtifact={onSaveArtifact}
+                    />
+                  </div>
+                ) : activeTab === 'preview' ? (
                   <div
                     className={`h-full transition-all duration-300 bg-white rounded-2xl overflow-hidden shadow-2xl border border-white/10 ${
                       simulatedDevice === 'mobile'
@@ -517,11 +620,31 @@ export const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
               <div className="px-4 py-2 border-t border-white/10 bg-[#090f1e] flex items-center justify-between text-[11px] font-mono text-slate-400 flex-shrink-0">
                 <div className="flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                  <span>Sandbox Active</span>
-                  <span>·</span>
-                  <span>{currentArtifact.content.length} chars</span>
-                  <span>·</span>
-                  <span>Format: {currentArtifact.type.toUpperCase()}</span>
+                  {activeTab === 'graph' ? (
+                    <>
+                      <span>D3 Graph Active</span>
+                      <span>·</span>
+                      <span>{artifacts.length} Artifacts Mapped</span>
+                      <span>·</span>
+                      <span>{workspaces.length || 1} Workspaces</span>
+                    </>
+                  ) : activeTab === 'scatter' ? (
+                    <>
+                      <span>D3 Scatter Evolution Matrix Active</span>
+                      <span>·</span>
+                      <span>Version History & Dependencies Mapped</span>
+                      <span>·</span>
+                      <span>{artifacts.length} Artifacts</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>Sandbox Active</span>
+                      <span>·</span>
+                      <span>{currentArtifact.content.length} chars</span>
+                      <span>·</span>
+                      <span>Format: {currentArtifact.type.toUpperCase()}</span>
+                    </>
+                  )}
                 </div>
                 <div className="flex items-center gap-2">
                   <span>Workspace: {workspaceName}</span>

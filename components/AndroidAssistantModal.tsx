@@ -1,8 +1,26 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Smartphone, Bell, FileText, Play, ShieldAlert, CheckCircle2, Trash2, Plus, X, Zap, Cpu, Terminal, ArrowUpRight } from 'lucide-react';
+import { 
+  Smartphone, 
+  Bell, 
+  FileText, 
+  Play, 
+  ShieldAlert, 
+  CheckCircle2, 
+  Trash2, 
+  Plus, 
+  X, 
+  Zap, 
+  Cpu, 
+  Terminal, 
+  ArrowUpRight,
+  Volume2,
+  Clock,
+  Check
+} from 'lucide-react';
 import { AssistantTask, AndroidIntentType } from '../types';
 import { triggerHaptic } from '../utils/haptics';
+import { androidAssistantService } from '../services/androidAssistantService';
 
 interface AndroidAssistantModalProps {
   isOpen: boolean;
@@ -26,9 +44,25 @@ export const AndroidAssistantModal: React.FC<AndroidAssistantModalProps> = ({
   const [taskTitle, setTaskTitle] = useState('');
   const [taskDetails, setTaskDetails] = useState('');
   const [intentType, setIntentType] = useState<AndroidIntentType>('SET_REMINDER');
-  const [scheduledTime, setScheduledTime] = useState('');
+  const [scheduledTime, setScheduledTime] = useState('In 10 Seconds');
+  const [notifPermission, setNotifPermission] = useState<string>(() => {
+    return typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'unsupported';
+  });
+  const [testedTaskId, setTestedTaskId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      setNotifPermission(Notification.permission);
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
+
+  const handleRequestNotif = async () => {
+    triggerHaptic(20);
+    const result = await androidAssistantService.requestNotificationPermission();
+    setNotifPermission(result);
+  };
 
   const handleCreateTask = (e: React.FormEvent) => {
     e.preventDefault();
@@ -46,8 +80,17 @@ export const AndroidAssistantModal: React.FC<AndroidAssistantModalProps> = ({
 
     setTaskTitle('');
     setTaskDetails('');
-    setScheduledTime('');
+    setScheduledTime('In 10 Seconds');
     setShowAddForm(false);
+  };
+
+  const handleTestReminder = (task: AssistantTask) => {
+    triggerHaptic(20);
+    setTestedTaskId(task.id);
+    androidAssistantService.triggerInstantTaskReminder(task);
+    setTimeout(() => {
+      setTestedTaskId(null);
+    }, 2500);
   };
 
   const filteredTasks = tasks.filter((t) => (filter === 'ALL' ? true : t.intentType === filter));
@@ -91,7 +134,7 @@ export const AndroidAssistantModal: React.FC<AndroidAssistantModalProps> = ({
                   Android Assistant Engine
                 </h2>
                 <span className="text-[10px] font-mono uppercase tracking-widest text-[#34A853]">
-                  Intent Dispatcher & Task Execution Matrix
+                  Intent Dispatcher & Deadline Task Reminder Matrix
                 </span>
               </div>
             </div>
@@ -104,18 +147,28 @@ export const AndroidAssistantModal: React.FC<AndroidAssistantModalProps> = ({
             </button>
           </div>
 
-          {/* Quick Info & Capabilities Banner */}
-          <div className="p-4 rounded-2xl bg-[#131d2e] border border-[#34A853]/30 mb-6 space-y-2">
-            <div className="flex items-center justify-between">
+          {/* Quick Info & Notification Permission Banner */}
+          <div className="p-4 rounded-2xl bg-[#131d2e] border border-[#34A853]/30 mb-6 space-y-3">
+            <div className="flex items-center justify-between flex-wrap gap-2">
               <span className="text-xs font-mono font-bold uppercase tracking-wider text-[#34A853] flex items-center gap-1.5">
-                <Terminal size={14} /> Android Intent Intercept System
+                <Terminal size={14} /> Android Intent Intercept & Task Reminders
               </span>
-              <span className="text-[9px] font-mono px-2 py-0.5 rounded-full bg-[#34A853]/20 text-[#34A853] font-bold">
-                Active HAL Binding
-              </span>
+
+              {notifPermission === 'granted' ? (
+                <span className="text-[10px] font-mono px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1 font-bold">
+                  <Check size={11} /> Notifications Enabled
+                </span>
+              ) : (
+                <button
+                  onClick={handleRequestNotif}
+                  className="text-[10px] font-mono px-2.5 py-1 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30 transition-colors flex items-center gap-1 font-bold"
+                >
+                  <Bell size={11} /> Enable Browser Notifications
+                </button>
+              )}
             </div>
             <p className="text-xs text-slate-300 leading-relaxed">
-              Ask GOD AI naturally (e.g., <span className="text-[#FAAD3F] italic">"Remind me to check trades at 10 AM"</span> or <span className="text-[#FAAD3F] italic">"Take a note on Ceeza Audio DSP"</span>) or create custom Assistant task intents directly below.
+              When tasks reach their deadline, GOD AI triggers a <span className="text-amber-300 font-medium">Local Browser Notification</span> and a <span className="text-[#FAAD3F] font-medium">Spoken TTS Announcement</span> with audio chime alert.
             </p>
           </div>
 
@@ -200,13 +253,41 @@ export const AndroidAssistantModal: React.FC<AndroidAssistantModalProps> = ({
                 />
 
                 {intentType === 'SET_REMINDER' && (
-                  <input
-                    type="text"
-                    placeholder="Scheduled Time (e.g. 10:30 AM)..."
-                    value={scheduledTime}
-                    onChange={(e) => setScheduledTime(e.target.value)}
-                    className="w-full bg-[#1b263b] border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white outline-none focus:border-[#34A853]"
-                  />
+                  <div className="space-y-2">
+                    <label className="text-[11px] font-mono text-slate-300 block">
+                      Reminder Deadline Presets:
+                    </label>
+                    <div className="flex flex-wrap gap-1.5">
+                      {[
+                        'In 10 Seconds',
+                        'In 1 Minute',
+                        'In 5 Minutes',
+                        'In 30 Minutes',
+                        'Today 5:00 PM'
+                      ].map((preset) => (
+                        <button
+                          key={preset}
+                          type="button"
+                          onClick={() => setScheduledTime(preset)}
+                          className={`px-2.5 py-1 rounded-lg text-[10px] font-mono transition-colors border ${
+                            scheduledTime === preset
+                              ? 'bg-amber-500 text-black font-bold border-amber-400'
+                              : 'bg-white/5 text-slate-400 border-white/10 hover:text-white'
+                          }`}
+                        >
+                          {preset}
+                        </button>
+                      ))}
+                    </div>
+
+                    <input
+                      type="text"
+                      placeholder="Or enter custom deadline (e.g. In 15 seconds, 10:30 AM)..."
+                      value={scheduledTime}
+                      onChange={(e) => setScheduledTime(e.target.value)}
+                      className="w-full bg-[#1b263b] border border-white/10 rounded-xl px-3.5 py-2 text-xs text-white outline-none focus:border-[#34A853]"
+                    />
+                  </div>
                 )}
 
                 <div className="flex items-center justify-end gap-2 pt-1">
@@ -238,6 +319,7 @@ export const AndroidAssistantModal: React.FC<AndroidAssistantModalProps> = ({
               filteredTasks.map((task) => {
                 const badge = getIntentBadge(task.intentType);
                 const BadgeIcon = badge.icon;
+                const isTestingThis = testedTaskId === task.id;
 
                 return (
                   <motion.div
@@ -261,6 +343,7 @@ export const AndroidAssistantModal: React.FC<AndroidAssistantModalProps> = ({
                               ? 'bg-[#34A853] text-black border-[#34A853]'
                               : 'bg-white/5 border-white/20 text-slate-500 hover:text-slate-300'
                           }`}
+                          title={task.completed ? "Mark Incomplete" : "Mark Completed"}
                         >
                           <CheckCircle2 size={16} />
                         </button>
@@ -274,8 +357,8 @@ export const AndroidAssistantModal: React.FC<AndroidAssistantModalProps> = ({
                               {badge.label}
                             </span>
                             {task.scheduledTime && (
-                              <span className="text-[10px] font-mono text-amber-300 bg-amber-500/10 px-2 py-0.5 rounded-md border border-amber-500/30">
-                                ⏱ {task.scheduledTime}
+                              <span className="text-[10px] font-mono text-amber-300 bg-amber-500/10 px-2 py-0.5 rounded-md border border-amber-500/30 flex items-center gap-1">
+                                <Clock size={10} /> {task.scheduledTime}
                               </span>
                             )}
                           </div>
@@ -301,16 +384,32 @@ export const AndroidAssistantModal: React.FC<AndroidAssistantModalProps> = ({
                         </div>
                       </div>
 
-                      <button
-                        onClick={() => {
-                          triggerHaptic(15);
-                          onDeleteTask(task.id);
-                        }}
-                        className="p-2 hover:bg-red-500/20 text-slate-500 hover:text-red-400 rounded-xl transition-colors"
-                        title="Delete Intent Task"
-                      >
-                        <Trash2 size={16} />
-                      </button>
+                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                        {/* Instant Reminder Test Trigger Button */}
+                        <button
+                          onClick={() => handleTestReminder(task)}
+                          className={`p-2 rounded-xl border text-xs font-mono transition-all flex items-center gap-1 ${
+                            isTestingThis
+                              ? 'bg-amber-500 text-black border-amber-400'
+                              : 'bg-white/5 border-white/10 hover:border-amber-400/50 text-amber-300 hover:bg-amber-500/10'
+                          }`}
+                          title="Trigger Reminder Now (Browser Notification & TTS Announcement)"
+                        >
+                          <Volume2 size={14} className={isTestingThis ? 'animate-bounce' : ''} />
+                          <span className="hidden sm:inline text-[10px]">Test Alert</span>
+                        </button>
+
+                        <button
+                          onClick={() => {
+                            triggerHaptic(15);
+                            onDeleteTask(task.id);
+                          }}
+                          className="p-2 hover:bg-red-500/20 text-slate-500 hover:text-red-400 rounded-xl transition-colors"
+                          title="Delete Intent Task"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
                     </div>
                   </motion.div>
                 );
