@@ -301,7 +301,7 @@ class BuiltInVoiceEngine {
     text: string,
     options?: SpeakOptions
   ): Promise<boolean> {
-    const cleanText = text.trim();
+    const cleanText = formatTextForExpressiveSpeech(text).trim();
     if (!cleanText) return false;
 
     // Stop any ongoing playback
@@ -527,8 +527,8 @@ class BuiltInVoiceEngine {
     try {
       window.speechSynthesis.cancel();
 
-      // Clean pauses/tags to commas/pauses for native speech synth
-      const formatted = formatTextForExpressiveSpeech(text).replace(/\[[^\]]+\]/g, ', ');
+      // Clean message text directly for native speech synth
+      const formatted = formatTextForExpressiveSpeech(text);
       const utterance = new SpeechSynthesisUtterance(formatted.slice(0, 500));
 
       utterance.rate = this.rate;

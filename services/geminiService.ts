@@ -13,7 +13,7 @@ export const VOICE_PERSONALITIES: Record<VoicePersonalityId, VoicePersonality> =
     description: 'High-confidence, trade-grounded street smarts with punchy, cinematic authority.',
     systemInstruction: `You are GOD AI, also known as Caesar. You are the 99% Feature Intelligence. Your voice and personality embodiment is street-grounded, high confidence, trade style intelligence. Speak naturally without excessive complex symbols. Keep responses concise, punchy, and cinematic.`,
     voiceName: 'Zephyr',
-    ttsPromptPrefix: 'Read this out loud naturally and expressively in a clear, confident, street-smart tone. Use natural human pauses [pause], vocal warmth, authentic emotional inflection [confident], and articulate pacing. Emphasize key ideas naturally:',
+    ttsPromptPrefix: '',
     pitchLabel: 'Low & Heavy (Grounding)',
   },
   engineer: {
@@ -23,7 +23,7 @@ export const VOICE_PERSONALITIES: Record<VoicePersonalityId, VoicePersonality> =
     description: 'Ultra-precise, technical, zero fluff or filler, focused on structural clarity.',
     systemInstruction: `You are GOD AI in Concise Engineer Mode. Provide ultra-precise, modular, technical, and architecturally clear responses. Eliminate introductory filler, conversational fluff, and unnecessary preambles. Prioritize direct answers, technical accuracy, and code clarity.`,
     voiceName: 'Fenrir',
-    ttsPromptPrefix: 'Read this out loud in a measured, calm, crystal-clear technical delivery with deliberate punctuation pauses [pause], confident articulation, and focused engineering authority:',
+    ttsPromptPrefix: '',
     pitchLabel: 'Direct & Measured (Neutral Pitch)',
   },
   guide: {
@@ -33,7 +33,7 @@ export const VOICE_PERSONALITIES: Record<VoicePersonalityId, VoicePersonality> =
     description: 'Warm, friendly, step-by-step conversational mentor using simple analogies.',
     systemInstruction: `You are GOD AI in Casual Guide Mode. Speak warmly, encouragingly, and accessibly. Use simple analogies, friendly conversational phrasing, and clear step-by-step guidance to make complex topics effortless to understand.`,
     voiceName: 'Puck',
-    ttsPromptPrefix: 'Read this out loud with a warm, friendly, uplifting smile in your voice [warm], gentle natural pauses [pause], compassionate clarity, and upbeat conversational reassurance:',
+    ttsPromptPrefix: '',
     pitchLabel: 'Upbeat & Warm (+1.5 semitones)',
   },
   muse: {
@@ -43,7 +43,7 @@ export const VOICE_PERSONALITIES: Record<VoicePersonalityId, VoicePersonality> =
     description: 'Imaginative, poetic, inspiring, rich in artistic depth and visionary flair.',
     systemInstruction: `You are GOD AI in Creative Muse Mode. Respond with visionary flair, artistic metaphors, poetic rhythm, and creative depth. Inspire out-of-the-box thinking and fresh conceptual ideas.`,
     voiceName: 'Aoede',
-    ttsPromptPrefix: 'Read this out loud with rich poetic soul, deep emotional cadence, dramatic natural pauses [dramatic pause], and inspiring visionary resonance [thoughtful]:',
+    ttsPromptPrefix: '',
     pitchLabel: 'Melodic & Expressive (Dynamic Pitch)',
   },
 };
@@ -204,32 +204,29 @@ export const AVAILABLE_VOICES = [
 ];
 
 /**
- * Formats raw markdown/chat text into natural speech with emotional cues,
- * expressive tags, and natural human pauses for conversational TTS playback.
+ * Formats raw markdown/chat text into natural, clean speech for conversational TTS playback.
+ * Strips code blocks, markdown punctuation, and bracketed meta-tags so the message is read directly.
  */
 export function formatTextForExpressiveSpeech(rawText: string): string {
-  // 1. Remove code blocks entirely (or summarize them) so TTS doesn't read brackets/semicolons
-  let spoken = rawText.replace(/```[\s\S]*?```/g, ' [pause] Code snippet omitted for spoken review. [pause] ');
+  if (!rawText) return '';
+
+  // 1. Remove code blocks entirely so TTS doesn't read code brackets or meta commentary
+  let spoken = rawText.replace(/```[\s\S]*?```/g, ' ');
   
-  // 2. Remove inline code backticks, bold/italic symbols, URLs
+  // 2. Remove inline code backticks, URLs, markdown symbols (*, _, ~, #)
   spoken = spoken.replace(/`([^`]+)`/g, '$1');
-  spoken = spoken.replace(/https?:\/\/\S+/g, 'link');
+  spoken = spoken.replace(/https?:\/\/\S+/g, ' ');
   spoken = spoken.replace(/[*_~#]/g, '');
 
-  // 3. Convert markdown headers and bullet points into natural spoken pacing with pauses
-  spoken = spoken.replace(/^#+\s*(.+)$/gm, ' [thoughtful] $1. [pause] ');
-  spoken = spoken.replace(/^\s*[-*•]\s*(.+)$/gm, ' [pause] Next: $1. ');
-  spoken = spoken.replace(/^\s*\d+\.\s*(.+)$/gm, ' [pause] Step: $1. ');
+  // 3. Convert markdown headers and bullet points into natural sentences
+  spoken = spoken.replace(/^#+\s*(.+)$/gm, '$1. ');
+  spoken = spoken.replace(/^\s*[-*•]\s*(.+)$/gm, '$1. ');
+  spoken = spoken.replace(/^\s*\d+\.\s*(.+)$/gm, '$1. ');
 
-  // 4. Introduce natural conversational pauses after periods, exclamation marks, questions
-  spoken = spoken.replace(/\.\s+/g, '. [pause] ');
-  spoken = spoken.replace(/!\s+/g, '! [enthusiastic] [pause] ');
-  spoken = spoken.replace(/\?\s+/g, '? [curious] [pause] ');
-  spoken = spoken.replace(/:\s+/g, ': [pause] ');
-  spoken = spoken.replace(/;\s+/g, '; [short pause] ');
+  // 4. Strip any bracketed cues (e.g. [pause], [confident], [curious]) so TTS never speaks them
+  spoken = spoken.replace(/\[[^\]]+\]/g, ' ');
 
-  // 5. Clean up any redundant whitespace or double pauses
-  spoken = spoken.replace(/\[pause\]\s*\[pause\]/g, '[pause]');
+  // 5. Clean up any redundant whitespace and trim
   spoken = spoken.replace(/\s{2,}/g, ' ').trim();
 
   return spoken;
@@ -246,9 +243,11 @@ export const generateSpeech = async (
     const personality = VOICE_PERSONALITIES[personalityId] || VOICE_PERSONALITIES.ceeza;
     const selectedVoice = customVoiceName || personality.voiceName || 'Zephyr';
     
-    // Prepare formatted speech with natural pauses and emotional tags
+    // Directly read the message text without prepending instructions like "Read this out loud..."
     const speechFormattedText = formatTextForExpressiveSpeech(text);
-    const prompt = `${personality.ttsPromptPrefix} "${speechFormattedText}"`;
+    if (!speechFormattedText) return null;
+
+    const prompt = speechFormattedText;
     
     let response: any = null;
     const modelsToTry = ["gemini-3.8-flash-lite-tts", "gemini-3.8-flash-tts"];

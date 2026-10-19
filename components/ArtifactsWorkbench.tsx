@@ -26,12 +26,16 @@ import {
   Eye,
   GitBranch,
   Network,
-  TrendingUp
+  TrendingUp,
+  LayoutTemplate,
+  FolderPlus,
+  ArrowRight
 } from 'lucide-react';
 import { Artifact, ArtifactType, Workspace } from '../types';
 import { triggerHaptic } from '../utils/haptics';
 import { D3ArtifactsGraph } from './D3ArtifactsGraph';
 import { D3ArtifactsScatterPlot } from './D3ArtifactsScatterPlot';
+import { ARTIFACT_UI_TEMPLATES, ArtifactUITemplate } from '../utils/uiTemplates';
 
 interface ArtifactsWorkbenchProps {
   isOpen: boolean;
@@ -58,7 +62,9 @@ export const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
   onCreateArtifact,
   workspaceName = 'Primary Command',
 }) => {
-  const [activeTab, setActiveTab] = useState<'code' | 'preview' | 'graph' | 'scatter'>('preview');
+  const [activeTab, setActiveTab] = useState<'code' | 'preview' | 'graph' | 'scatter' | 'templates'>('preview');
+  const [templateCategory, setTemplateCategory] = useState<string>('all');
+  const [copiedTemplateId, setCopiedTemplateId] = useState<string | null>(null);
   const [simulatedDevice, setSimulatedDevice] = useState<'desktop' | 'tablet' | 'mobile'>('desktop');
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState('');
@@ -272,6 +278,22 @@ export const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
             <button
               onClick={() => {
                 triggerHaptic(15);
+                setActiveTab(activeTab === 'templates' ? 'preview' : 'templates');
+              }}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-mono transition-all border ${
+                activeTab === 'templates'
+                  ? 'bg-[#34d399] text-black border-[#34d399] font-bold shadow-md'
+                  : 'bg-white/5 border-white/10 text-slate-300 hover:text-white hover:bg-white/10'
+              }`}
+              title="Browse Pre-Built UI Templates"
+            >
+              <LayoutTemplate size={14} />
+              <span className="hidden sm:inline">{activeTab === 'templates' ? 'Back to Sandbox' : 'UI Templates'}</span>
+            </button>
+
+            <button
+              onClick={() => {
+                triggerHaptic(15);
                 setActiveTab(activeTab === 'scatter' ? 'preview' : 'scatter');
               }}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-mono transition-all border ${
@@ -449,6 +471,21 @@ export const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
                     <TrendingUp size={13} />
                     <span>Evolution Scatter</span>
                   </button>
+
+                  <button
+                    onClick={() => {
+                      triggerHaptic(10);
+                      setActiveTab('templates');
+                    }}
+                    className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-mono transition-all ${
+                      activeTab === 'templates'
+                        ? 'bg-[#34d399] text-black font-bold shadow-sm'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    <LayoutTemplate size={13} />
+                    <span>UI Templates</span>
+                  </button>
                 </div>
 
                 {/* Device Viewport Emulator Controls (when in Live Preview) */}
@@ -580,6 +617,146 @@ export const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
                       onSaveArtifact={onSaveArtifact}
                     />
                   </div>
+                ) : activeTab === 'templates' ? (
+                  <div className="w-full h-full rounded-2xl overflow-y-auto border border-white/10 p-4 sm:p-6 bg-[#040711] space-y-5">
+                    {/* Template Gallery Header */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-white/10">
+                      <div>
+                        <h3 className="text-base font-bold text-white font-mono flex items-center gap-2">
+                          <LayoutTemplate size={16} className="text-[#34d399]" />
+                          <span>Curated UI Templates & Executable Starters</span>
+                        </h3>
+                        <p className="text-xs text-slate-400 mt-0.5">
+                          Production-grade telemetry grids, audio DSP equalizers, mobile intent hubs, and RFC specs ready to test.
+                        </p>
+                      </div>
+
+                      {/* Zero-Pill Category Filter */}
+                      <div className="flex items-center gap-1 p-1 bg-black/40 border border-white/10 rounded-xl overflow-x-auto">
+                        {[
+                          { id: 'all', label: 'All' },
+                          { id: 'dashboard', label: 'Dashboards' },
+                          { id: 'dsp', label: 'Audio DSP' },
+                          { id: 'mobile', label: 'Mobile' },
+                          { id: 'diagram', label: 'Diagrams' },
+                          { id: 'spec', label: 'Specs' },
+                        ].map((cat) => (
+                          <button
+                            key={cat.id}
+                            onClick={() => {
+                              triggerHaptic(10);
+                              setTemplateCategory(cat.id);
+                            }}
+                            className={`px-2.5 py-1 text-[11px] font-mono rounded-lg transition-all ${
+                              templateCategory === cat.id
+                                ? 'bg-white/15 text-white font-bold border border-white/20'
+                                : 'text-slate-400 hover:text-white'
+                            }`}
+                          >
+                            {cat.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Template Cards Grid */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {ARTIFACT_UI_TEMPLATES
+                        .filter((t) => templateCategory === 'all' || t.category === templateCategory)
+                        .map((tmpl) => (
+                          <div
+                            key={tmpl.id}
+                            className="p-5 rounded-2xl bg-[#0a1020] border border-white/10 hover:border-[#34d399]/40 transition-all shadow-xl flex flex-col justify-between group text-left"
+                          >
+                            <div className="space-y-2.5">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2 text-xs text-slate-400 font-mono">
+                                  <span className="text-white font-semibold">{tmpl.categoryLabel}</span>
+                                  <span aria-hidden="true">·</span>
+                                  <span className="text-[#34d399] uppercase">{tmpl.type}</span>
+                                  <span aria-hidden="true">·</span>
+                                  <span className="text-slate-400">{tmpl.language}</span>
+                                </div>
+                                <span className="text-[10px] font-mono text-slate-500">
+                                  {tmpl.content.length} bytes
+                                </span>
+                              </div>
+
+                              <h4 className="text-sm font-bold text-white group-hover:text-[#34d399] transition-colors">
+                                {tmpl.title}
+                              </h4>
+
+                              <p className="text-xs text-slate-400 leading-relaxed font-light">
+                                {tmpl.description}
+                              </p>
+
+                              <div className="flex flex-wrap gap-1.5 pt-1">
+                                {tmpl.tags.map((tag) => (
+                                  <span key={tag} className="text-[10px] font-mono text-slate-400 bg-white/5 px-2 py-0.5 rounded">
+                                    #{tag}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+
+                            <div className="mt-5 pt-3 border-t border-white/5 flex items-center justify-between gap-2">
+                              <button
+                                type="button"
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+                                  triggerHaptic(10);
+                                  await navigator.clipboard.writeText(tmpl.content);
+                                  setCopiedTemplateId(tmpl.id);
+                                  setTimeout(() => setCopiedTemplateId(null), 2000);
+                                }}
+                                className="flex items-center gap-1 text-[11px] font-mono text-slate-400 hover:text-white transition-colors p-1"
+                              >
+                                {copiedTemplateId === tmpl.id ? <Check size={13} className="text-emerald-400" /> : <Copy size={13} />}
+                                <span>{copiedTemplateId === tmpl.id ? 'Copied' : 'Copy'}</span>
+                              </button>
+
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    triggerHaptic(15);
+                                    if (currentArtifact) {
+                                      setEditContent(tmpl.content);
+                                      setIsEditing(true);
+                                      setActiveTab('code');
+                                    }
+                                  }}
+                                  className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 text-xs font-mono transition-all border border-white/10"
+                                >
+                                  Edit Code
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    triggerHaptic(20);
+                                    onCreateArtifact({
+                                      title: tmpl.title,
+                                      type: tmpl.type,
+                                      language: tmpl.language,
+                                      description: tmpl.description,
+                                      content: tmpl.content,
+                                      workspaceId: currentArtifact?.workspaceId || 'ws-default',
+                                      tags: tmpl.tags,
+                                    });
+                                    setActiveTab('preview');
+                                  }}
+                                  className="flex items-center gap-1 px-3 py-1 rounded-lg bg-[#34d399] text-black font-bold text-xs font-mono hover:brightness-110 transition-all cursor-pointer shadow-md"
+                                >
+                                  <span>Save & Run</span>
+                                  <ArrowRight size={12} />
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
                 ) : activeTab === 'preview' ? (
                   <div
                     className={`h-full transition-all duration-300 bg-white rounded-2xl overflow-hidden shadow-2xl border border-white/10 ${
@@ -636,6 +813,14 @@ export const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
                       <span>·</span>
                       <span>{artifacts.length} Artifacts</span>
                     </>
+                  ) : activeTab === 'templates' ? (
+                    <>
+                      <span>UI Template Gallery</span>
+                      <span>·</span>
+                      <span>{ARTIFACT_UI_TEMPLATES.length} Production Starters</span>
+                      <span>·</span>
+                      <span>1-Click Load & Run</span>
+                    </>
                   ) : (
                     <>
                       <span>Sandbox Active</span>
@@ -689,6 +874,40 @@ export const ArtifactsWorkbench: React.FC<ArtifactsWorkbenchProps> = ({
                 >
                   <X size={16} />
                 </button>
+              </div>
+
+              {/* Quick Template Starters */}
+              <div className="space-y-1.5 pb-3 border-b border-white/10">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-mono uppercase text-slate-400 font-bold">
+                    Scaffold from UI Template
+                  </span>
+                  <span className="text-[10px] font-mono text-[#34d399]">1-Click Preload</span>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                  {ARTIFACT_UI_TEMPLATES.map((tmpl) => (
+                    <button
+                      key={tmpl.id}
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic(15);
+                        setNewTitle(tmpl.title);
+                        setNewType(tmpl.type);
+                        setNewLanguage(tmpl.language);
+                        setNewDescription(tmpl.description);
+                        setNewContent(tmpl.content);
+                      }}
+                      className="p-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-left transition-all hover:border-[#34d399]/40 group"
+                    >
+                      <p className="text-[11px] font-semibold text-white group-hover:text-[#34d399] transition-colors truncate">
+                        {tmpl.title}
+                      </p>
+                      <p className="text-[9px] font-mono text-slate-400 uppercase">
+                        {tmpl.categoryLabel}
+                      </p>
+                    </button>
+                  ))}
+                </div>
               </div>
 
               <form onSubmit={handleCreateSubmit} className="space-y-3.5">
